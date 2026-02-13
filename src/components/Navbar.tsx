@@ -21,8 +21,8 @@ export function Navbar() {
 
         {/* Desktop Navigation */}
         <div className="hidden md:flex md:items-center md:gap-8">
-          <NavLink href="/science">科学前沿</NavLink>
-          <NavLink href="/interventions">干预技术</NavLink>
+          <NavLink href="/frontiers">科学前沿</NavLink>
+          <NavLink href="/articles">文章列表</NavLink>
           <NavLink href="/about">关于芬格</NavLink>
         </div>
 
