@@ -2,7 +2,7 @@ import { getArticlesByCategory } from "@/lib/mdx";
 import { ArticleCard } from "@/components/ArticleCard";
 import { Microscope, ArrowLeft, Dna, Activity, Brain, Utensils, Zap, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
-import { CategoryGrid } from "@/components/CategoryGrid";
+
 
 export const metadata = {
     title: "前沿科学 (Geroscience) - Finger5D",

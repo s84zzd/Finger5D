@@ -16,6 +16,7 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
         // Load preference from local storage
         const saved = localStorage.getItem("finger5d-large-text");
         if (saved === "true") {
+            // eslint-disable-next-line
             setIsLargeText(true);
             document.body.classList.add("text-enlarged");
         }

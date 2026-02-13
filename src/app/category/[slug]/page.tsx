@@ -15,7 +15,7 @@ const categoryConfig: Record<string, {
     intro: React.ReactNode;
     features: string[];
     cta: string;
-    icon: any;
+    icon: React.ComponentType<{ className?: string }>;
     color: string;
     bg: string;
 }> = {

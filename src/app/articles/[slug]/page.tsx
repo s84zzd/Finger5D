@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: PageProps) {
             title: `${article.frontmatter.title} - Finger5D`,
             description: article.frontmatter.summary,
         };
-    } catch (e) {
+    } catch {
         return {
             title: "Article Not Found",
         };
@@ -36,7 +36,7 @@ export default async function ArticlePage({ params }: PageProps) {
     let article;
     try {
         article = getArticleBySlug(slug);
-    } catch (e) {
+    } catch {
         notFound();
     }
 

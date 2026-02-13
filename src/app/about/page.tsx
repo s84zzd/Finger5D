@@ -1,5 +1,5 @@
-import { ShieldCheck, HeartHandshake, Eye, Target, Activity, Brain, Utensils, Users, Microscope, CheckCircle2 } from "lucide-react";
-import Link from "next/link";
+import { ShieldCheck, HeartHandshake, Eye, Target, Microscope, CheckCircle2 } from "lucide-react";
+
 import { CategoryGrid } from "@/components/CategoryGrid";
 
 export const metadata = {

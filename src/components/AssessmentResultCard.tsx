@@ -1,3 +1,4 @@
+import Link from "next/link";
 export default function AssessmentResultCard({ scores }: { scores: Record<string, number> }) {
     // Sort scores to find the lowest one. 
     // Object.entries returns [key, value]. Sort by value (a[1] - b[1]).
@@ -39,9 +40,9 @@ export default function AssessmentResultCard({ scores }: { scores: Record<string
             <h3 className="mt-6 text-xl font-semibold text-slate-900">推荐阅读</h3>
             <ul className="mt-3 list-disc pl-6 text-slate-700 text-lg">
                 <li>
-                    <a href="/articles" className="text-blue-600 underline hover:text-blue-800 transition-colors">
+                    <Link href="/articles" className="text-blue-600 underline hover:text-blue-800 transition-colors">
                         查看相关文章
-                    </a>
+                    </Link>
                 </li>
             </ul>
         </div>

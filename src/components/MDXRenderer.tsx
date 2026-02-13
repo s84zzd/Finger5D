@@ -1,7 +1,7 @@
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { Citation } from "@/components/Citation";
 import { Tag } from "@/components/Tag";
-import { MoveRight } from "lucide-react";
+
 
 // Define custom components available in MDX files
 const components = {

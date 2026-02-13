@@ -2,37 +2,56 @@ import { ArticleList } from "@/components/ArticleList";
 import { CategoryGrid } from "@/components/CategoryGrid";
 import { ArrowRight, CheckCircle2, Microscope, Activity } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Home() {
   return (
     <div className="bg-white">
       {/* 🌟 Hero Section */}
-      <section className="relative isolate overflow-hidden bg-slate-50 px-6 py-24 sm:py-32 lg:px-8">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(45rem_50rem_at_top,theme(colors.blue.100),white)] opacity-20" />
-        <div className="mx-auto max-w-2xl text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl text-balance">
-            探索生命延长的<span className="text-blue-600">科学边界</span>
-          </h1>
-          <p className="mt-6 text-lg leading-8 text-slate-600 text-balance">
-            为 50+ 人群打造的前沿衰老科学平台。
-            <br />
-            以芬格健康模型 (Finger5D) 为框架，让复杂研究变得易懂、可信、可实践。
-          </p>
-          <div className="mt-10 flex items-center justify-center gap-x-6">
-            <Link
-              href="/articles"
-              className="rounded-full bg-blue-600 px-8 py-3.5 text-lg font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-colors"
-            >
-              开始阅读
-            </Link>
-            <Link
-              href="/assessment"
-              className="group text-lg font-semibold leading-6 text-slate-900 flex items-center gap-1 hover:text-blue-600 transition-colors"
-            >
-              进行 5 题轻量评估 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-            </Link>
+      {/* 🌟 Hero Section */}
+      <section className="relative isolate overflow-hidden bg-slate-50 pt-14 lg:pt-0">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8">
+          <div className="mx-auto grid max-w-2xl grid-cols-1 gap-x-8 gap-y-16 lg:max-w-none lg:grid-cols-2 lg:items-center">
+            <div className="w-full max-w-xl lg:shrink-0 xl:max-w-2xl pt-24 pb-24 sm:pb-32 lg:pt-40">
+              <h1 className="text-5xl font-bold tracking-tight text-slate-900 sm:text-6xl text-balance">
+                探索生命延长的<span className="text-blue-600 block mt-2">科学边界</span>
+              </h1>
+              <p className="mt-8 text-xl leading-relaxed text-slate-600 sm:max-w-md lg:max-w-none text-balance">
+                为 50+ 人群打造的前沿衰老科学平台。
+                <br />
+                以芬格健康模型 (Finger5D) 为框架，让复杂研究变得易懂、可信、可实践。
+              </p>
+              <div className="mt-10 flex items-center gap-x-6">
+                <Link
+                  href="/articles"
+                  className="rounded-full bg-blue-600 px-8 py-3.5 text-lg font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-all hover:-translate-y-0.5"
+                >
+                  开始阅读
+                </Link>
+                <Link
+                  href="/assessment"
+                  className="group rounded-full px-8 py-3.5 text-lg font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 hover:text-blue-600 transition-all flex items-center gap-2"
+                >
+                  5 题轻量评估 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+                </Link>
+              </div>
+            </div>
+            <div className="mx-auto w-full max-w-md lg:max-w-full lg:flex-auto lg:py-32 lg:text-right relative">
+              {/* Hero Illustration */}
+              <div className="relative aspect-square w-full max-w-lg mx-auto lg:ml-auto rounded-full flex items-center justify-center">
+                <Image
+                  src="/images/hero-scientific-abstract.jpeg"
+                  alt="Finger5D Science Illustration"
+                  width={800}
+                  height={800}
+                  priority
+                  className="w-full h-full object-contain drop-shadow-2xl"
+                />
+              </div>
+            </div>
           </div>
         </div>
+        <div className="absolute inset-x-0 bottom-0 -z-10 h-24 bg-gradient-to-t from-white sm:h-32" />
       </section>
 
       {/* 🧠 Section 1: Value Proposition */}
