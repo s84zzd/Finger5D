@@ -31,8 +31,10 @@ export function ArticleCard({ title, excerpt, category, href, date }: ArticleCar
                     {excerpt}
                 </p>
             </div>
-            <div className="mt-6 flex items-center gap-x-2 text-sm font-semibold text-blue-600">
-                阅读全文 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            <div className="mt-6 flex items-center gap-x-2 text-sm font-semibold text-blue-600 relative z-10">
+                <Link href={href} className="flex items-center gap-x-2">
+                    阅读全文 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </Link>
             </div>
         </article>
     );
