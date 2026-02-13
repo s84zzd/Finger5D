@@ -1,26 +1,57 @@
 @import "tailwindcss";
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Finger5D Color Palette */
+  --color-brand-blue: #0f172a;
+  /* Slate 900 equivalent for now, but deeper */
+  --color-brand-primary: #1e3a8a;
+  /* Blue 900 */
+  --color-brand-accent: #f97316;
+  /* Orange 500 */
+  --color-brand-green: #15803d;
+  /* Green 700 */
+}
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
-}
+  --foreground: #0f172a;
+  /* Slate 900 - High Contrast */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Accessibility: Base Font Settings */
+  --font-size-base: 18px;
+  /* User requested 18-20px */
+  --line-height-base: 1.8;
+  /* User requested 1.7-1.9 */
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+
+  /* Applying accessibility defaults */
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+
+  /* Optimizing for readability */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Utility for text enlargement (A+) */
+.text-enlarged {
+  font-size: 22px !important;
+  line-height: 2 !important;
+}
+
+/* Custom Utilities for Accessibility */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
 }
