@@ -26,9 +26,9 @@ export function Footer() {
                             探索
                         </h3>
                         <ul className="space-y-3">
-                            <li><FooterLink href="/science">科学前沿</FooterLink></li>
-                            <li><FooterLink href="/interventions">干预技术</FooterLink></li>
-                            <li><FooterLink href="/lifestyle">生活方式</FooterLink></li>
+                            <li><FooterLink href="/frontiers">科学前沿</FooterLink></li>
+                            <li><FooterLink href="/articles">文章列表</FooterLink></li>
+                            <li><FooterLink href="/assessment">健康评估</FooterLink></li>
                         </ul>
                     </div>
 
