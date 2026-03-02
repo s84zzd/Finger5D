@@ -9,11 +9,12 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-    const body = await request.json() as { theme?: string; category?: FiveDCategory | "other" };
+    const body = await request.json() as { theme?: string; category?: FiveDCategory | "other"; page?: number };
 
     try {
         const theme = String(body.theme ?? "").trim();
         const category = body.category;
+        const page = Number(body.page ?? 1);
 
         if (!theme) {
             return NextResponse.json({ message: "主题不能为空" }, { status: 400 });
@@ -27,8 +28,14 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ message: "分类不合法" }, { status: 400 });
         }
 
-        const result = await searchAndSavePaperLibrary(theme, category);
-        return NextResponse.json({ ...result.state, addedCount: result.addedCount });
+        const result = await searchAndSavePaperLibrary(theme, category, page);
+        return NextResponse.json({
+            ...result.state,
+            addedCount: result.addedCount,
+            matchedCount: result.matchedCount,
+            reusedCount: result.reusedCount,
+            requestedPage: result.requestedPage
+        });
     } catch (error) {
         return NextResponse.json(
             { message: error instanceof Error ? error.message : "论文入库失败" },

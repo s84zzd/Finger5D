@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated paper-library exports
+/src/data/paper-library/*-摘要.txt
+/src/data/paper-library/*-原文.txt
+/src/data/paper-library/*-原文.pdf

@@ -14,6 +14,30 @@ export const PAPER_SOURCES = ["crossref", "openalex", "pubmed", "webofscience", 
 
 export type PaperSource = (typeof PAPER_SOURCES)[number];
 
+export const DRAFT_PROMPT_TEMPLATES = [
+    "layered_progressive",
+    "qa_dialogue",
+    "compare_analysis",
+    "narrative_research",
+    "minimal_cards"
+] as const;
+
+export type DraftPromptTemplate = (typeof DRAFT_PROMPT_TEMPLATES)[number];
+
+export const DRAFT_STUDY_TEMPLATES = [
+    "auto",
+    "rct",
+    "meta_analysis",
+    "prospective_cohort",
+    "retrospective_cohort",
+    "cross_sectional",
+    "cohort",
+    "case_control",
+    "diagnostic_accuracy"
+] as const;
+
+export type DraftStudyTemplate = (typeof DRAFT_STUDY_TEMPLATES)[number];
+
 export interface SearchSettings {
     sourceWhitelist: PaperSource[];
     sinceYear: number;
@@ -73,6 +97,8 @@ export interface PaperCandidate {
     doi?: string;
     url: string;
     abstract?: string;
+    abstractEn?: string;
+    abstractZh?: string;
 }
 
 export interface PaperLibraryItem extends PaperCandidate {
@@ -81,6 +107,15 @@ export interface PaperLibraryItem extends PaperCandidate {
     themeSeed: string;
     searchScope?: "category" | "other";
     keywords?: string[];
+    customCategories?: string[];
+    referenceTypeCode?: string;
+    volume?: string;
+    issue?: string;
+    pages?: string;
+    gbtCitation?: string;
+    storageCategory?: string;
+    adopted?: boolean;
+    adoptedAt?: string;
     localFilePath?: string;
     summaryFilePath?: string;
     originalFilePath?: string;
@@ -108,6 +143,8 @@ export interface WorkflowTask {
     draftTitle?: string;
     draftSummary?: string;
     draftContent?: string;
+    draftPromptTemplate?: DraftPromptTemplate;
+    draftStudyTemplate?: DraftStudyTemplate;
     reviewComment?: string;
     operationLogs?: TaskOperationLog[];
     createdAt: string;
