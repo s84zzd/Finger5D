@@ -4,8 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:3001": "next dev -p 3001",
+    "dev:3010": "next dev -p 3010",
     "build": "next build",
     "start": "next start",
+    "start:3001": "next start -p 3001",
+    "start:3010": "next start -p 3010",
     "lint": "eslint",
     "lan:url": "node scripts/print-lan-url.mjs",
     "lan:dev": "next dev -H 0.0.0.0 -p 3000",

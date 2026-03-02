@@ -95,6 +95,26 @@ npm run dev
 ### 部署 (Deployment)
 推荐使用 Vercel，自动支持 SSR/SSG 和 Edge Functions。
 
+### 端口冲突快速处理（Windows）
+当 `npm run dev` 或 `npm run start` 报错 `EADDRINUSE`（端口被占用）时，可直接使用备用脚本：
+
+```bash
+# 开发模式
+npm run dev:3001
+npm run dev:3010
+
+# 生产模式（需先 build）
+npm run start:3001
+npm run start:3010
+```
+
+也可使用原生命令临时指定端口：
+
+```bash
+npm run start -- -p 3001
+npm run dev -- -p 3010
+```
+
 ### 局域网运营部署（LAN）
 适用于公司/家庭内网环境，服务器与访问终端在同一局域网。
 
