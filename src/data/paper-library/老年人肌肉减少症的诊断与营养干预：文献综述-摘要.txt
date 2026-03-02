@@ -1,0 +1,16 @@
+标题（中文）：老年人肌肉减少症的诊断与营养干预：文献综述
+标题（英文）：Diagnosis of sarcopenia and nutritional intervention in the elderly: literature review
+来源：openalex
+作者：Nicole Debia
+期刊：MOJ Gerontology & Geriatrics
+年份：2022
+DOI：10.15406/mojgg.2022.07.00294
+链接：https://openalex.org/W4318331112
+
+--- 摘要（英文） ---
+Sarcopenia is a skeletal muscle disorder that affects the elderly, characterized by loss of muscle volume associated with loss of strength and performance, increasing the risk of fractures, falls, physical disability and mortality. The diagnosis includes DEXA, physical performance tests, anthropometric measurements as calf circumference and strength test using handgrip strenght that check muscle volume, it’s quality and the elderly mobility and balance hability. Nutritional intervention is an essential strategy in the control of sarcopenia and comprises the adequate energy and protein intake, in addition to vitamin D, primarily. In this context, this narrative review aimed to collect current information about the characteristics of sarcopenia, diagnosis methods and nutritional strategies for the treatment. Updates were searched in BVS, PubMed and SciELO databases, technical books, and Brazilian and international consensus. The structured content makes consultation and updating on sarcopenia easier, from diagnosis to the most relevant dietary recommendations for the treatment of the disease.
+
+--- 摘要（中文翻译） ---
+肌肉减少症是一种影响老年人的骨骼肌疾病，其特点为肌肉量减少伴随肌力与功能下降，从而增加骨折、跌倒、身体失能及死亡风险。诊断方法包括双能X线吸收法、体能测试、小腿围等人体测量指标以及通过握力测试评估肌肉力量，这些手段共同用于检测肌肉量、肌肉质量及老年人的活动与平衡能力。营养干预是控制肌肉减少症的核心策略，主要包括充足的能量与蛋白质摄入，并优先关注维生素D的补充。基于此背景，本叙述性综述旨在汇总当前关于肌肉减少症特征、诊断方法及治疗营养策略的最新信息。研究通过检索BVS、PubMed和SciELO数据库、专业书籍以及巴西与国际共识文件获取最新资料。综述内容结构清晰，便于从诊断到疾病治疗中最相关的膳食建议进行查阅与更新，为肌肉减少症的研究与实践提供系统参考。
+
+导出时间：2026-03-02T08:30:00.686Z

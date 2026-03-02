@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { Menu, Search, Type } from "lucide-react";
 import { useAccessibility } from "@/components/AccessibilityProvider";
+import { useState } from "react";
 
 export function Navbar() {
   const { isLargeText, toggleLargeText } = useAccessibility();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -24,6 +28,7 @@ export function Navbar() {
           <NavLink href="/frontiers">科学前沿</NavLink>
           <NavLink href="/articles">文章列表</NavLink>
           <NavLink href="/about">关于芬格</NavLink>
+          <NavLink href="/admin">管理后台</NavLink>
         </div>
 
         {/* Right Actions */}
@@ -42,22 +47,48 @@ export function Navbar() {
             <span>A+</span>
           </button>
 
-          <button
+          <Link
+            href="/articles"
             className="rounded-full p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-            aria-label="Search"
+            aria-label="搜索文章"
+            title="搜索文章"
           >
             <Search className="h-6 w-6" />
-          </button>
+          </Link>
 
           {/* Mobile Menu Button - Visible only on mobile */}
           <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
             className="md:hidden rounded-md p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-            aria-label="Open menu"
+            aria-label={isMobileMenuOpen ? "关闭菜单" : "打开菜单"}
+            title={isMobileMenuOpen ? "关闭菜单" : "打开菜单"}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-nav-menu"
           >
             <Menu className="h-7 w-7" />
           </button>
         </div>
       </div>
+
+      {isMobileMenuOpen && (
+        <div id="mobile-nav-menu" className="md:hidden border-t border-slate-200 bg-white px-4 py-3">
+          <div className="flex flex-col gap-3">
+            <Link href="/frontiers" className="text-base font-medium text-slate-700 hover:text-blue-600 transition-colors" onClick={closeMobileMenu}>
+              科学前沿
+            </Link>
+            <Link href="/articles" className="text-base font-medium text-slate-700 hover:text-blue-600 transition-colors" onClick={closeMobileMenu}>
+              文章列表
+            </Link>
+            <Link href="/about" className="text-base font-medium text-slate-700 hover:text-blue-600 transition-colors" onClick={closeMobileMenu}>
+              关于芬格
+            </Link>
+            <Link href="/admin" className="text-base font-medium text-slate-700 hover:text-blue-600 transition-colors" onClick={closeMobileMenu}>
+              管理后台
+            </Link>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

@@ -1,0 +1,16 @@
+标题（中文）：定期进行体力活动的年轻女性与男性的饮食炎症指数
+标题（英文）：Diet Inflammatory Index among Regularly Physically Active Young Women and Men
+来源：openalex
+作者：Anna Pietrzak, Anna Kęska, Dagmara Iwańska
+期刊：Nutrients
+年份：2023
+DOI：10.3390/nu16010062
+链接：https://openalex.org/W4390196649
+
+--- 摘要（英文） ---
+Recently, special attention has been paid to the relationship between diet and inflammation in the body. A factor that influences both diet and inflammation is physical activity. The aim of this study was to assess the inflammatory potential of the diets of young people engaging in regular physical activity. The participants were physical education students ( n = 141 men and n = 151 women). The measurements included basic anthropometric parameters and a 4-day nutritional history from which the dietary inflammatory index (DII) was calculated. The average DII for female students was 2.09 ± 1.52, and that for male students was 0.21 ± 1.69. Consumption of all macro- and micronutrients was significantly higher among women and men with the lowest DII value (corresponding to an anti-inflammatory diet). The female and male students consuming anti-inflammatory diets were characterized by greater lean body mass (LBM), and, for the male students, a lower body fat content, compared to those whose diets were pro-inflammatory. Young and regularly physically active people are also exposed to the pro-inflammatory nature of their diets, whose long-term effects may lead to health problems.
+
+--- 摘要（中文翻译） ---
+近年来，饮食与机体炎症之间的关系受到特别关注。体力活动是同时影响饮食与炎症的重要因素。本研究旨在评估规律进行体力活动的青年人群饮食的炎症潜力。研究对象为体育专业学生（男性141人，女性151人）。测量内容包括基础人体测量参数及为期4天的营养摄入记录，并据此计算膳食炎症指数（DII）。结果显示，女学生的平均DII为2.09±1.52，男学生为0.21±1.69。在DII值最低（即抗炎饮食模式）的男女学生中，所有宏量营养素和微量营养素的摄入量均显著更高。与促炎饮食组相比，采用抗炎饮食的男女学生具有更高的瘦体重，且男性学生体脂含量更低。研究表明，即使对于年轻且规律运动的群体，其饮食仍可能具有促炎倾向，这种长期影响可能导致健康问题。
+
+导出时间：2026-03-02T08:41:52.945Z

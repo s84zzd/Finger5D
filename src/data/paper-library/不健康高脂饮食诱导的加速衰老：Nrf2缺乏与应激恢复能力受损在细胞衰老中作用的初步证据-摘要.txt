@@ -1,0 +1,16 @@
+标题（中文）：不健康高脂饮食诱导的加速衰老：Nrf2缺乏与应激恢复能力受损在细胞衰老中作用的初步证据
+标题（英文）：Accelerated Aging Induced by an Unhealthy High-Fat Diet: Initial Evidence for the Role of Nrf2 Deficiency and Impaired Stress Resilience in Cellular Senescence
+来源：openalex
+作者：Priya Balasubramanian, Tamás Kiss, Rafał Gulej, Adam Nyul Toth, Stefano Tarantini, Andriy Yabluchanskiy
+期刊：Nutrients
+年份：2024
+DOI：10.3390/nu16070952
+链接：https://openalex.org/W4393188035
+
+--- 摘要（英文） ---
+High-fat diets (HFDs) have pervaded modern dietary habits, characterized by their excessive saturated fat content and low nutritional value. Epidemiological studies have compellingly linked HFD consumption to obesity and the development of type 2 diabetes mellitus. Moreover, the synergistic interplay of HFD, obesity, and diabetes expedites the aging process and prematurely fosters age-related diseases. However, the underlying mechanisms driving these associations remain enigmatic. One of the most conspicuous hallmarks of aging is the accumulation of highly inflammatory senescent cells, with mounting evidence implicating increased cellular senescence in the pathogenesis of age-related diseases. Our hypothesis posits that HFD consumption amplifies senescence burden across multiple organs. To scrutinize this hypothesis, we subjected mice to a 6-month HFD regimen, assessing senescence biomarker expression in the liver, white adipose tissue, and the brain. Aging is intrinsically linked to impaired cellular stress resilience, driven by dysfunction in Nrf2-mediated cytoprotective pathways that safeguard cells against oxidative stress-induced senescence. To ascertain whether Nrf2-mediated pathways shield against senescence induction in response to HFD consumption, we explored senescence burden in a novel model of aging: Nrf2-deficient (Nrf2 +/- ) mice, emulating the aging phenotype. Our initial findings unveiled significant Nrf2 dysfunction in Nrf2 +/- mice, mirroring aging-related alterations. HFD led to substantial obesity, hyperglycemia, and impaired insulin sensitivity in both Nrf2 +/- and Nrf2 +/+ mice. In control mice, HFD primarily heightened senescence burden in white adipose tissue, evidenced by increased Cdkn2a senescence biomarker expression. In Nrf2 +/- mice, HFD elicited a significant surge in senescence burden across the liver, white adipose tissue, and the brain. We postulate that HFD-induced augmentation of senescence burden may be a pivotal contributor to accelerated organismal aging and the premature onset of age-related diseases.
+
+--- 摘要（中文翻译） ---
+高脂饮食在现代饮食习惯中日益普遍，其特点是饱和脂肪含量过高且营养价值较低。流行病学研究已明确揭示高脂饮食摄入与肥胖及2型糖尿病发病之间的关联。此外，高脂饮食、肥胖和糖尿病的协同作用会加速衰老进程，并过早诱发与年龄相关的疾病。然而，驱动这些关联的内在机制仍不明确。衰老最显著的特征之一是高度炎性衰老细胞的积累，越来越多的证据表明细胞衰老的增加与年龄相关疾病的发生机制有关。我们假设高脂饮食会加剧多个器官的衰老负荷。为验证这一假设，我们对小鼠进行了为期6个月的高脂饮食干预，并评估了肝脏、白色脂肪组织和大脑中衰老生物标志物的表达。衰老本质上与细胞应激适应能力下降相关，这主要由Nrf2介导的细胞保护通路功能障碍所驱动，该通路能保护细胞免受氧化应激诱导的衰老。为探究Nrf2介导的通路是否能抵御高脂饮食诱导的衰老，我们在一种模拟衰老表型的新型衰老模型——Nrf2缺陷型（Nrf2+/-）小鼠中研究了衰老负荷。初步研究结果显示，Nrf2+/-小鼠存在显著的Nrf2功能障碍，这与衰老相关改变相一致。高脂饮食导致Nrf2+/-和Nrf2+/+小鼠均出现明显肥胖、高血糖及胰岛素敏感性下降。在对照组小鼠中，高脂饮食主要增加了白色脂肪组织的衰老负荷，表现为Cdkn2a衰老生物标志物表达升高。而在Nrf2+/-小鼠中，高脂饮食引起了肝脏、白色脂肪组织和大脑衰老负荷的显著激增。我们认为，高脂饮食诱导的衰老负荷增加可能是加速机体衰老及过早发生年龄相关疾病的关键因素。
+
+导出时间：2026-03-02T08:42:24.017Z

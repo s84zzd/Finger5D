@@ -10,28 +10,20 @@ interface AccessibilityContextType {
 const AccessibilityContext = createContext<AccessibilityContextType | undefined>(undefined);
 
 export function AccessibilityProvider({ children }: { children: React.ReactNode }) {
-    const [isLargeText, setIsLargeText] = useState(false);
+    const [isLargeText, setIsLargeText] = useState(() => {
+        if (typeof window === "undefined") {
+            return false;
+        }
+        return localStorage.getItem("finger5d-large-text") === "true";
+    });
 
     useEffect(() => {
-        // Load preference from local storage
-        const saved = localStorage.getItem("finger5d-large-text");
-        if (saved === "true") {
-            // eslint-disable-next-line
-            setIsLargeText(true);
-            document.body.classList.add("text-enlarged");
-        }
-    }, []);
+        document.body.classList.toggle("text-enlarged", isLargeText);
+        localStorage.setItem("finger5d-large-text", String(isLargeText));
+    }, [isLargeText]);
 
     const toggleLargeText = () => {
-        const newState = !isLargeText;
-        setIsLargeText(newState);
-        localStorage.setItem("finger5d-large-text", String(newState));
-
-        if (newState) {
-            document.body.classList.add("text-enlarged");
-        } else {
-            document.body.classList.remove("text-enlarged");
-        }
+        setIsLargeText((prev) => !prev);
     };
 
     return (

@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "lan:url": "node scripts/print-lan-url.mjs",
+    "lan:dev": "next dev -H 0.0.0.0 -p 3000",
+    "lan:start": "next start -H 0.0.0.0 -p 3000",
+    "lan:prod": "npm run build && npm run lan:start"
   },
   "dependencies": {
     "gray-matter": "^4.0.3",

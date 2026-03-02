@@ -1,0 +1,16 @@
+标题（中文）：促进线粒体自噬的制剂及其促进健康老龄化的能力
+标题（英文）：Mitophagy-promoting agents and their ability to promote healthy-aging
+来源：openalex
+作者：Vijigisha Srivastava, Einav Gross
+期刊：Biochemical Society Transactions
+年份：2023
+DOI：10.1042/bst20221363
+链接：https://openalex.org/W4386305578
+
+--- 摘要（英文） ---
+The removal of damaged mitochondrial components through a process called mitochondrial autophagy (mitophagy) is essential for the proper function of the mitochondrial network. Hence, mitophagy is vital for the health of all aerobic animals, including humans. Unfortunately, mitophagy declines with age. Many age-associated diseases, including Alzheimer's and Parkinson's, are characterized by the accumulation of damaged mitochondria and oxidative damage. Therefore, activating the mitophagy process with small molecules is an emerging strategy for treating multiple aging diseases. Recent studies have identified natural and synthetic compounds that promote mitophagy and lifespan. This article aims to summarize the existing knowledge about these substances. For readers' convenience, the knowledge is presented in a table that indicates the chemical data of each substance and its effect on lifespan. The impact on healthspan and the molecular mechanism is reported if known. The article explores the potential of utilizing a combination of mitophagy-inducing drugs within a therapeutic framework and addresses the associated challenges of this strategy. Finally, we discuss the process that balances mitophagy, i.e. mitochondrial biogenesis. In this process, new mitochondrial components are generated to replace the ones cleared by mitophagy. Furthermore, some mitophagy-inducing substances activate biogenesis (e.g. resveratrol and metformin). Finally, we discuss the possibility of combining mitophagy and biogenesis enhancers for future treatment. In conclusion, this article provides an up-to-date source of information about natural and synthetic substances that activate mitophagy and, hopefully, stimulates new hypotheses and studies that promote healthy human aging worldwide.
+
+--- 摘要（中文翻译） ---
+通过线粒体自噬过程清除受损的线粒体成分对于维持线粒体网络的正常功能至关重要。因此，线粒体自噬对所有需氧生物（包括人类）的健康具有关键作用。然而，线粒体自噬会随年龄增长而减弱。许多与衰老相关的疾病（如阿尔茨海默病和帕金森病）均以受损线粒体堆积和氧化损伤为特征。因此，利用小分子化合物激活线粒体自噬过程正成为治疗多种衰老相关疾病的新兴策略。近期研究已发现多种能促进线粒体自噬并延长寿命的天然及合成化合物。本文旨在系统总结现有关于这些物质的研究成果。为便于读者查阅，相关数据以表格形式呈现，涵盖各物质的化学信息及其对寿命的影响，并在已知情况下说明其对健康寿命的作用及分子机制。本文探讨了在治疗框架中联合使用线粒体自噬诱导药物的潜力，并分析了该策略面临的挑战。此外，文章还讨论了与线粒体自噬相平衡的线粒体生物合成过程——该过程通过生成新的线粒体成分以替代被自噬清除的部分。值得注意的是，部分线粒体自噬诱导物质（如白藜芦醇和二甲双胍）同时能激活生物合成。最后，我们探讨了未来联合使用线粒体自噬增强剂与生物合成促进剂的治疗可能性。综上所述，本文为天然及合成线粒体自噬激活物质提供了最新研究资料，有望激发全球范围内促进人类健康衰老的新假说与研究。
+
+导出时间：2026-03-02T08:30:16.198Z

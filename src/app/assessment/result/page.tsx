@@ -4,15 +4,24 @@ interface PageProps {
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
+function parseScore(value: string | string[] | undefined): number {
+    const rawValue = Array.isArray(value) ? value[0] : value;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+        return 0;
+    }
+    return Math.max(0, Math.min(5, parsed));
+}
+
 export default async function AssessmentResultPage({ searchParams }: PageProps) {
     const params = await searchParams;
 
     const scores = {
-        cardio: Number(params.cardio || 0),
-        physical: Number(params.physical || 0),
-        cognitive: Number(params.cognitive || 0),
-        nutrition: Number(params.nutrition || 0),
-        social: Number(params.social || 0),
+        cardio: parseScore(params.cardio),
+        physical: parseScore(params.physical),
+        cognitive: parseScore(params.cognitive),
+        nutrition: parseScore(params.nutrition),
+        social: parseScore(params.social),
     };
 
     return (

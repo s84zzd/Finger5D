@@ -1,0 +1,16 @@
+标题（中文）：健康衰老的分子机制：热量限制、间歇性禁食、地中海饮食和生酮饮食的作用——一项范围综述
+标题（英文）：Molecular Mechanisms of Healthy Aging: The Role of Caloric Restriction, Intermittent Fasting, Mediterranean Diet, and Ketogenic Diet—A Scoping Review
+来源：openalex
+作者：Roxana Surugiu, Mihaela Adela Iancu, Ştefăniţa Bianca Vintilescu, Mioara Desdemona Stepan, Daiana Burdusel, Amelia Genunche‐Dumitrescu
+期刊：Nutrients
+年份：2024
+DOI：10.3390/nu16172878
+链接：https://openalex.org/W4401959966
+
+--- 摘要（英文） ---
+As the population ages, promoting healthy aging through targeted interventions becomes increasingly crucial. Growing evidence suggests that dietary interventions can significantly impact this process by modulating fundamental molecular pathways. This review focuses on the potential of targeted dietary strategies in promoting healthy aging and the mechanisms by which specific nutrients and dietary patterns influence key pathways involved in cellular repair, inflammation, and metabolic regulation. Caloric restriction, intermittent fasting, the Mediterranean diet, as well as the ketogenic diet showed promising effects on promoting healthy aging, possibly by modulating mTORC1 AMPK, an insulin signaling pathway. By understanding the intricate interplay between diet and molecular pathways, we can develop personalized dietary strategies that not only prevent age-related diseases, but also promote overall health and well-being throughout the aging process.
+
+--- 摘要（中文翻译） ---
+随着人口老龄化加剧，通过针对性干预促进健康老龄化变得日益重要。越来越多的证据表明，饮食干预可通过调节基础分子通路对这一进程产生显著影响。本综述聚焦于针对性饮食策略在促进健康老龄化方面的潜力，并探讨特定营养素与饮食模式如何影响细胞修复、炎症反应及代谢调控等关键通路的作用机制。热量限制、间歇性禁食、地中海饮食以及生酮饮食均显示出促进健康老龄化的积极效果，其作用机制可能与调控mTORC1-AMPK胰岛素信号通路有关。通过理解饮食与分子通路之间复杂的相互作用，我们可以制定个性化的饮食策略，不仅预防年龄相关疾病，更能在整个衰老过程中促进整体健康与福祉。
+
+导出时间：2026-03-02T08:44:29.292Z
