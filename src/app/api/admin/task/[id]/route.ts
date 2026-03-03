@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUsernameFromCookieHeader } from "@/lib/admin-auth";
 import { appendTaskOperationLog, updateTask } from "@/lib/admin-workflow";
+import type { PaperCandidate } from "@/lib/admin-types";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,7 @@ interface PatchBody {
     theme?: string;
     topicNote?: string;
     selectedPaperId?: string;
+    paperCandidates?: PaperCandidate[];
     status?: "planned" | "paper_selected" | "drafted" | "approved" | "rejected" | "published";
     reviewComment?: string;
 }
@@ -34,6 +36,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                     : task),
             theme: body.theme ?? task.theme,
             topicNote: body.topicNote ?? task.topicNote,
+            paperCandidates: Array.isArray(body.paperCandidates) ? body.paperCandidates : task.paperCandidates,
             selectedPaperId: body.selectedPaperId ?? task.selectedPaperId,
             reviewComment: body.reviewComment ?? task.reviewComment,
             status: body.status ?? task.status

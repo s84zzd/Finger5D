@@ -1,9 +1,13 @@
 import fs from "fs";
 import path from "path";
 import {
+    DRAFT_PROMPT_TEMPLATES,
+    DRAFT_STUDY_TEMPLATES,
     FIVE_D_CATEGORIES,
     type MonthlyGenerationPreview,
     type MonthlyGenerationPreviewWeek,
+    type DraftPromptTemplate,
+    type DraftStudyTemplate,
     PAPER_SOURCES,
     type CollaborationSettings,
     type FiveDCategory,
@@ -90,6 +94,8 @@ const CATEGORY_SEARCH_TERMS: Record<FiveDCategory, string[]> = {
 };
 
 const THEME_KEYWORD_MAP: Array<{ pattern: RegExp; token: string }> = [
+    { pattern: /衰老|老龄|老化|抗衰/g, token: "aging" },
+    { pattern: /衰老|老龄|老化|抗衰/g, token: "geroscience" },
     { pattern: /睡眠|睡不好|失眠/g, token: "sleep" },
     { pattern: /节律|昼夜/g, token: "circadian" },
     { pattern: /心|血压|心血管/g, token: "cardiovascular" },
@@ -114,6 +120,8 @@ const CATEGORY_LABEL: Record<FiveDCategory, string> = {
     nutrition: "健康饮食",
     social: "社交与情绪"
 };
+
+const LIBRARY_SEARCH_BATCH_SIZE = 20;
 
 type PaperLibrarySearchCategory = FiveDCategory | "other";
 
@@ -298,12 +306,27 @@ function normalizePaperLibrary(input: PaperLibraryItem[] | undefined): PaperLibr
         doi: item.doi ? String(item.doi) : undefined,
         url: String(item.url ?? ""),
         abstract: item.abstract ? String(item.abstract) : undefined,
+        abstractEn: item.abstractEn
+            ? String(item.abstractEn)
+            : (item.abstract ? String(item.abstract) : undefined),
+        abstractZh: item.abstractZh ? String(item.abstractZh) : undefined,
         category: item.category,
         themeSeed: String(item.themeSeed ?? ""),
         searchScope: item.searchScope === "other" ? "other" : "category",
         keywords: Array.isArray(item.keywords)
             ? Array.from(new Set(item.keywords.map((keyword) => String(keyword ?? "").trim()).filter(Boolean))).slice(0, 20)
             : [],
+        customCategories: Array.isArray(item.customCategories)
+            ? Array.from(new Set(item.customCategories.map((value) => String(value ?? "").trim()).filter(Boolean))).slice(0, 20)
+            : [],
+        referenceTypeCode: String(item.referenceTypeCode ?? "J").trim() || "J",
+        volume: item.volume ? String(item.volume) : undefined,
+        issue: item.issue ? String(item.issue) : undefined,
+        pages: item.pages ? String(item.pages) : undefined,
+        gbtCitation: item.gbtCitation ? String(item.gbtCitation) : undefined,
+        storageCategory: item.storageCategory ? String(item.storageCategory).trim() : undefined,
+        adopted: Boolean(item.adopted),
+        adoptedAt: item.adoptedAt ? String(item.adoptedAt) : undefined,
         localFilePath: item.localFilePath ? String(item.localFilePath) : undefined,
         summaryFilePath: item.summaryFilePath
             ? String(item.summaryFilePath)
@@ -687,6 +710,127 @@ function stripHtmlTags(input: string): string {
     return input.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 }
 
+const SEARCH_THEME_TRANSLATION_MAP: Array<{ pattern: RegExp; token: string }> = [
+    { pattern: /衰老|老龄|老化|抗衰/g, token: "aging" },
+    { pattern: /睡眠|失眠/g, token: "sleep" },
+    { pattern: /节律|昼夜/g, token: "circadian" },
+    { pattern: /炎症/g, token: "inflammation" },
+    { pattern: /肌肉|肌少|肌肉衰减/g, token: "sarcopenia" },
+    { pattern: /力量|抗阻/g, token: "resistance training" },
+    { pattern: /认知|记忆|注意力/g, token: "cognitive" },
+    { pattern: /饮食|营养/g, token: "nutrition" },
+    { pattern: /社交|孤独|情绪/g, token: "social" },
+    { pattern: /代谢|血糖|胰岛素/g, token: "metabolic" },
+    { pattern: /心血管|血压|心脏/g, token: "cardiovascular" }
+];
+
+function mapThemeToEnglishTokens(theme: string): string[] {
+    const tokens: string[] = [];
+
+    for (const entry of SEARCH_THEME_TRANSLATION_MAP) {
+        entry.pattern.lastIndex = 0;
+        if (entry.pattern.test(theme)) {
+            tokens.push(entry.token);
+        }
+    }
+
+    return Array.from(new Set(tokens));
+}
+
+async function translateThemeForSearch(theme: string): Promise<string> {
+    const source = theme.trim();
+    if (!source) {
+        return "";
+    }
+
+    if (!hasChineseText(source)) {
+        return source;
+    }
+
+    const mappedTokens = mapThemeToEnglishTokens(source);
+    if (mappedTokens.length > 0) {
+        return mappedTokens.join(" ");
+    }
+
+    const provider = (process.env.LLM_PROVIDER ?? "deepseek").toLowerCase();
+
+    if (provider === "openai") {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            return source;
+        }
+
+        try {
+            const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+            const response = await fetch("https://api.openai.com/v1/responses", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model,
+                    input: `Translate this Chinese health topic into concise English search keywords only (max 12 words): ${source}`
+                }),
+                cache: "no-store"
+            });
+
+            if (!response.ok) {
+                return source;
+            }
+
+            const payload = await response.json() as { output_text?: string };
+            const translated = String(payload.output_text ?? "").replace(/\s+/g, " ").trim();
+            return translated || source;
+        } catch {
+            return source;
+        }
+    }
+
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+        return source;
+    }
+
+    try {
+        const model = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+        const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    {
+                        role: "system",
+                        content: "You translate Chinese health topics into concise English academic search keywords only."
+                    },
+                    {
+                        role: "user",
+                        content: `Translate this topic into concise English search keywords only (max 12 words): ${source}`
+                    }
+                ],
+                temperature: 0.1
+            }),
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            return source;
+        }
+
+        const payload = await response.json() as {
+            choices?: Array<{ message?: { content?: string } }>;
+        };
+        const translated = payload.choices?.[0]?.message?.content?.replace(/\s+/g, " ").trim() ?? "";
+        return translated || source;
+    } catch {
+        return source;
+    }
+}
+
 function normalizeThemeForQuery(theme: string): string {
     return theme
         .replace(/（第\d+篇）/g, "")
@@ -716,7 +860,13 @@ function buildSearchTerms(category: PaperLibrarySearchCategory, theme: string): 
     if (freeTextTheme) {
         allTerms.push(freeTextTheme);
     }
-    allTerms.push("aging", "healthspan", "older adults", "longevity");
+
+    const hasThemeSignal = mapped.length > 0 || /[a-z0-9]/i.test(freeTextTheme);
+    if (hasThemeSignal) {
+        allTerms.push("older adults");
+    } else {
+        allTerms.push("aging", "healthspan", "older adults", "longevity");
+    }
 
     return Array.from(new Set(allTerms));
 }
@@ -760,6 +910,38 @@ function buildRelevanceScore(candidate: PaperCandidate, terms: string[]): number
     return score;
 }
 
+function rankCandidatesByRelevance(
+    candidates: PaperCandidate[],
+    terms: string[],
+    settings: SearchSettings
+): PaperCandidate[] {
+    const recent = candidates.filter((candidate) => {
+        const yearNum = Number(candidate.year);
+        return Number.isFinite(yearNum) ? yearNum >= settings.sinceYear : false;
+    });
+
+    const scored = recent.map((candidate) => ({ candidate, score: buildRelevanceScore(candidate, terms) }));
+    let filtered = scored.filter((item) => item.score >= settings.minRelevanceScore);
+
+    if (filtered.length === 0 && scored.length > 0 && settings.minRelevanceScore > 1) {
+        filtered = scored.filter((item) => item.score >= 1);
+    }
+
+    if (filtered.length === 0) {
+        filtered = scored;
+    }
+
+    return filtered
+        .sort((left, right) => {
+            if (right.score !== left.score) {
+                return right.score - left.score;
+            }
+            return Number(right.candidate.year) - Number(left.candidate.year);
+        })
+        .slice(0, settings.maxResultsPerSource)
+        .map((item) => item.candidate);
+}
+
 function parseCrossrefAuthors(authorField: unknown): string {
     if (!Array.isArray(authorField)) {
         return "Unknown";
@@ -777,11 +959,18 @@ function parseCrossrefAuthors(authorField: unknown): string {
     return names.length > 0 ? names.join(", ") : "Unknown";
 }
 
-async function searchCrossrefByTheme(category: PaperLibrarySearchCategory, theme: string, settings: SearchSettings): Promise<PaperCandidate[]> {
+async function searchCrossrefByTheme(
+    category: PaperLibrarySearchCategory,
+    theme: string,
+    settings: SearchSettings,
+    page = 1
+): Promise<PaperCandidate[]> {
     const terms = buildSearchTerms(category, theme);
     const query = encodeURIComponent(terms.join(" "));
-    const rows = Math.min(30, settings.maxResultsPerSource * 4);
-    const url = `https://api.crossref.org/works?rows=${rows}&sort=published&order=desc&filter=from-pub-date:${settings.sinceYear}-01-01,type:journal-article&query.bibliographic=${query}`;
+    const rows = Math.min(100, settings.maxResultsPerSource * 4);
+    const safePage = Math.max(1, Math.trunc(page));
+    const offset = Math.max(0, (safePage - 1) * settings.maxResultsPerSource);
+    const url = `https://api.crossref.org/works?rows=${rows}&offset=${offset}&sort=published&order=desc&filter=from-pub-date:${settings.sinceYear}-01-01,type:journal-article&query.bibliographic=${query}`;
 
     try {
         const response = await fetch(url, {
@@ -831,21 +1020,7 @@ async function searchCrossrefByTheme(category: PaperLibrarySearchCategory, theme
             } satisfies PaperCandidate;
         });
 
-        return mapped
-            .filter((candidate) => {
-                const yearNum = Number(candidate.year);
-                return Number.isFinite(yearNum) ? yearNum >= settings.sinceYear : false;
-            })
-            .map((candidate) => ({ candidate, score: buildRelevanceScore(candidate, terms) }))
-            .filter((item) => item.score >= settings.minRelevanceScore)
-            .sort((left, right) => {
-                if (right.score !== left.score) {
-                    return right.score - left.score;
-                }
-                return Number(right.candidate.year) - Number(left.candidate.year);
-            })
-            .slice(0, settings.maxResultsPerSource)
-            .map((item) => item.candidate);
+        return rankCandidatesByRelevance(mapped, terms, settings);
     } catch {
         return [];
     }
@@ -900,11 +1075,17 @@ function parseOpenAlexAbstract(abstractIndex: unknown): string | undefined {
         .join(" ");
 }
 
-async function searchOpenAlexByTheme(category: PaperLibrarySearchCategory, theme: string, settings: SearchSettings): Promise<PaperCandidate[]> {
+async function searchOpenAlexByTheme(
+    category: PaperLibrarySearchCategory,
+    theme: string,
+    settings: SearchSettings,
+    page = 1
+): Promise<PaperCandidate[]> {
     const terms = buildSearchTerms(category, theme);
     const query = encodeURIComponent(terms.join(" "));
-    const rows = Math.min(30, settings.maxResultsPerSource * 4);
-    const url = `https://api.openalex.org/works?search=${query}&filter=from_publication_date:${settings.sinceYear}-01-01,type:article,is_retracted:false&sort=publication_date:desc&per-page=${rows}`;
+    const rows = Math.min(100, settings.maxResultsPerSource * 4);
+    const safePage = Math.max(1, Math.trunc(page));
+    const url = `https://api.openalex.org/works?search=${query}&filter=from_publication_date:${settings.sinceYear}-01-01,type:article,is_retracted:false&sort=publication_date:desc&per-page=${rows}&page=${safePage}`;
 
     try {
         const response = await fetch(url, {
@@ -951,21 +1132,7 @@ async function searchOpenAlexByTheme(category: PaperLibrarySearchCategory, theme
             } satisfies PaperCandidate;
         });
 
-        return mapped
-            .filter((candidate) => {
-                const yearNum = Number(candidate.year);
-                return Number.isFinite(yearNum) ? yearNum >= settings.sinceYear : false;
-            })
-            .map((candidate) => ({ candidate, score: buildRelevanceScore(candidate, terms) }))
-            .filter((item) => item.score >= settings.minRelevanceScore)
-            .sort((left, right) => {
-                if (right.score !== left.score) {
-                    return right.score - left.score;
-                }
-                return Number(right.candidate.year) - Number(left.candidate.year);
-            })
-            .slice(0, settings.maxResultsPerSource)
-            .map((item) => item.candidate);
+        return rankCandidatesByRelevance(mapped, terms, settings);
     } catch {
         return [];
     }
@@ -976,15 +1143,22 @@ function parsePubMedYear(pubDate: string): string {
     return match ? match[0] : "Unknown";
 }
 
-async function searchPubMedByTheme(category: PaperLibrarySearchCategory, theme: string, settings: SearchSettings): Promise<PaperCandidate[]> {
+async function searchPubMedByTheme(
+    category: PaperLibrarySearchCategory,
+    theme: string,
+    settings: SearchSettings,
+    page = 1
+): Promise<PaperCandidate[]> {
     const terms = buildSearchTerms(category, theme);
     const queryText = `${terms.join(" ")} AND ("${settings.sinceYear}"[Date - Publication] : "3000"[Date - Publication])`;
     const query = encodeURIComponent(queryText);
-    const rows = Math.min(30, settings.maxResultsPerSource * 4);
+    const rows = Math.min(100, settings.maxResultsPerSource * 4);
+    const safePage = Math.max(1, Math.trunc(page));
+    const retStart = Math.max(0, (safePage - 1) * settings.maxResultsPerSource);
     const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
 
     try {
-        const searchResponse = await fetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${rows}&sort=pub+date&term=${query}`, {
+        const searchResponse = await fetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${rows}&retstart=${retStart}&sort=pub+date&term=${query}`, {
             cache: "no-store"
         });
 
@@ -1051,21 +1225,7 @@ async function searchPubMedByTheme(category: PaperLibrarySearchCategory, theme: 
             } satisfies PaperCandidate];
         });
 
-        return mapped
-            .filter((candidate) => {
-                const yearNum = Number(candidate.year);
-                return Number.isFinite(yearNum) ? yearNum >= settings.sinceYear : false;
-            })
-            .map((candidate) => ({ candidate, score: buildRelevanceScore(candidate, terms) }))
-            .filter((item) => item.score >= settings.minRelevanceScore)
-            .sort((left, right) => {
-                if (right.score !== left.score) {
-                    return right.score - left.score;
-                }
-                return Number(right.candidate.year) - Number(left.candidate.year);
-            })
-            .slice(0, settings.maxResultsPerSource)
-            .map((item) => item.candidate);
+        return rankCandidatesByRelevance(mapped, terms, settings);
     } catch {
         return [];
     }
@@ -1075,7 +1235,8 @@ async function searchByExternalConnector(
     source: "webofscience" | "wanfang" | "cnki",
     category: PaperLibrarySearchCategory,
     theme: string,
-    settings: SearchSettings
+    settings: SearchSettings,
+    page = 1
 ): Promise<PaperCandidate[]> {
     const terms = buildSearchTerms(category, theme);
     const endpointBySource: Record<typeof source, string | undefined> = {
@@ -1105,8 +1266,9 @@ async function searchByExternalConnector(
             body: JSON.stringify({
                 terms,
                 theme,
+                page: Math.max(1, Math.trunc(page)),
                 sinceYear: settings.sinceYear,
-                maxResults: settings.maxResultsPerSource * 2
+                maxResults: settings.maxResultsPerSource * 3
             }),
             cache: "no-store"
         });
@@ -1139,21 +1301,7 @@ async function searchByExternalConnector(
             abstract: item.abstract ? String(item.abstract) : undefined
         } satisfies PaperCandidate));
 
-        return mapped
-            .filter((candidate) => {
-                const yearNum = Number(candidate.year);
-                return Number.isFinite(yearNum) ? yearNum >= settings.sinceYear : false;
-            })
-            .map((candidate) => ({ candidate, score: buildRelevanceScore(candidate, terms) }))
-            .filter((item) => item.score >= settings.minRelevanceScore)
-            .sort((left, right) => {
-                if (right.score !== left.score) {
-                    return right.score - left.score;
-                }
-                return Number(right.candidate.year) - Number(left.candidate.year);
-            })
-            .slice(0, settings.maxResultsPerSource)
-            .map((item) => item.candidate);
+        return rankCandidatesByRelevance(mapped, terms, settings);
     } catch {
         return [];
     }
@@ -1186,6 +1334,309 @@ function dedupeCandidates(candidates: PaperCandidate[]): PaperCandidate[] {
         }
         return 0;
     });
+}
+
+async function fetchCrossrefMetadataByDoi(doiInput: string): Promise<PaperCandidate | null> {
+    const doi = normalizeDoi(doiInput);
+    if (!doi) {
+        return null;
+    }
+
+    const endpoint = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
+    try {
+        const response = await fetch(endpoint, {
+            headers: {
+                "User-Agent": "Finger5D-Admin/1.0 (mailto:contact@finger5d.com)"
+            },
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const payload = await response.json() as { message?: Record<string, unknown> };
+        const item = payload.message;
+        if (!item) {
+            return null;
+        }
+
+        const titleArray = item.title;
+        const title = Array.isArray(titleArray) && titleArray.length > 0 ? String(titleArray[0]) : "Untitled paper";
+        const publishedYear = parsePublicationYear(item.issued)
+            ?? parsePublicationYear(item["published-print"])
+            ?? parsePublicationYear(item["published-online"]);
+        const year = publishedYear ? String(publishedYear) : "Unknown";
+        const abstract = typeof item.abstract === "string" ? stripHtmlTags(item.abstract) : undefined;
+        const paperUrl = typeof item.URL === "string"
+            ? item.URL
+            : `https://doi.org/${doi}`;
+
+        return {
+            id: `crossref-${doi}`,
+            source: "crossref",
+            title,
+            authors: parseCrossrefAuthors(item.author),
+            journal: Array.isArray(item["container-title"]) && item["container-title"].length > 0
+                ? String(item["container-title"][0])
+                : "Unknown journal",
+            year,
+            doi,
+            url: paperUrl,
+            abstract
+        } satisfies PaperCandidate;
+    } catch {
+        return null;
+    }
+}
+
+async function fetchCrossrefMetadataByTitle(title: string): Promise<PaperCandidate | null> {
+    const normalizedTitle = String(title ?? "").trim();
+    if (!normalizedTitle) {
+        return null;
+    }
+
+    const endpoint = `https://api.crossref.org/works?rows=1&sort=score&order=desc&query.title=${encodeURIComponent(normalizedTitle)}`;
+    try {
+        const response = await fetch(endpoint, {
+            headers: {
+                "User-Agent": "Finger5D-Admin/1.0 (mailto:contact@finger5d.com)"
+            },
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const payload = await response.json() as {
+            message?: {
+                items?: Array<Record<string, unknown>>;
+            };
+        };
+
+        const item = payload.message?.items?.[0];
+        if (!item) {
+            return null;
+        }
+
+        const doi = typeof item.DOI === "string" ? item.DOI : "";
+        if (!doi) {
+            return null;
+        }
+
+        return fetchCrossrefMetadataByDoi(doi);
+    } catch {
+        return null;
+    }
+}
+
+async function saveOriginalPdfToLibrary(pdfUrl: string, titleOrFallback: string): Promise<string | null> {
+    const normalizedUrl = String(pdfUrl ?? "").trim();
+    if (!normalizedUrl) {
+        return null;
+    }
+
+    const response = await fetch(normalizedUrl, { cache: "no-store" });
+    if (!response.ok) {
+        return null;
+    }
+
+    const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    const extension = contentType.includes("application/pdf") ? ".pdf" : ".txt";
+
+    const libraryDir = path.join(DATA_DIR, "paper-library");
+    if (!fs.existsSync(libraryDir)) {
+        fs.mkdirSync(libraryDir, { recursive: true });
+    }
+
+    const safeName = sanitizeFileName(titleOrFallback, `external-${Date.now()}`);
+    const fileName = `${safeName}-原文${extension}`;
+    const filePath = path.join(libraryDir, fileName);
+
+    if (extension === ".pdf") {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(filePath, buffer);
+    } else {
+        const text = await response.text();
+        fs.writeFileSync(filePath, text, "utf8");
+    }
+
+    return path.relative(process.cwd(), filePath).replace(/\\/g, "/");
+}
+
+function extractDoiFromText(input: string): string {
+    const normalized = String(input ?? "").trim();
+    if (!normalized) {
+        return "";
+    }
+
+    const direct = normalizeDoi(normalized);
+    if (direct) {
+        return direct;
+    }
+
+    const matched = normalized.match(/10\.\d{4,9}\/[\-._;()/:A-Z0-9]+/i);
+    return normalizeDoi(matched?.[0] ?? "");
+}
+
+function inferTitleFromUrlPath(url: string): string {
+    try {
+        const parsed = new URL(url);
+        const rawName = parsed.pathname.split("/").filter(Boolean).pop() ?? "";
+        const withoutExt = rawName.replace(/\.[a-z0-9]{2,6}$/i, "");
+        const decoded = decodeURIComponent(withoutExt)
+            .replace(/[_+\-]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        return decoded;
+    } catch {
+        return "";
+    }
+}
+
+async function inferTitleFromSourceUrl(url: string): Promise<string> {
+    const normalizedUrl = String(url ?? "").trim();
+    if (!normalizedUrl) {
+        return "";
+    }
+
+    try {
+        const response = await fetch(normalizedUrl, { cache: "no-store" });
+        if (!response.ok) {
+            return inferTitleFromUrlPath(normalizedUrl);
+        }
+
+        const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+        if (contentType.includes("text/html")) {
+            const html = await response.text();
+            const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+            const pageTitle = String(titleMatch?.[1] ?? "")
+                .replace(/\s+/g, " ")
+                .trim();
+            if (pageTitle) {
+                return pageTitle;
+            }
+        }
+
+        return inferTitleFromUrlPath(normalizedUrl);
+    } catch {
+        return inferTitleFromUrlPath(normalizedUrl);
+    }
+}
+
+export async function importPaperLibraryItemFromExternal(input: {
+    title?: string;
+    doi?: string;
+    sourceUrl?: string;
+    pdfUrl?: string;
+    category?: FiveDCategory;
+    themeSeed?: string;
+}): Promise<{ state: WorkflowState; reused: boolean; importedId: string }> {
+    const state = readWorkflowState();
+    const titleInput = String(input.title ?? "").trim();
+    const doiInput = normalizeDoi(String(input.doi ?? ""));
+    const sourceUrlInput = String(input.sourceUrl ?? "").trim();
+    const pdfUrlInput = String(input.pdfUrl ?? "").trim();
+
+    if (!titleInput && !doiInput && !sourceUrlInput) {
+        throw new Error("请至少提供标题、DOI 或来源链接之一");
+    }
+
+    const doiFromUrl = extractDoiFromText(sourceUrlInput);
+    const effectiveDoi = doiInput || doiFromUrl;
+
+    const metadata = effectiveDoi
+        ? await fetchCrossrefMetadataByDoi(effectiveDoi)
+        : await fetchCrossrefMetadataByTitle(titleInput);
+
+    const inferredTitleFromUrl = (!metadata?.title && !titleInput && sourceUrlInput)
+        ? await inferTitleFromSourceUrl(sourceUrlInput)
+        : "";
+
+    const now = getIsoDate(new Date());
+    const normalizedCategory = input.category ?? "cardio";
+    const themeSeed = String(input.themeSeed ?? "外部导入").trim() || "外部导入";
+
+    const candidate: PaperCandidate = {
+        id: `external-${Date.now()}`,
+        source: metadata?.source ?? "crossref",
+        title: metadata?.title ?? (titleInput || inferredTitleFromUrl || "Untitled paper"),
+        authors: metadata?.authors ?? "Unknown",
+        journal: metadata?.journal ?? "Unknown journal",
+        year: metadata?.year ?? "Unknown",
+        doi: metadata?.doi ?? (effectiveDoi || undefined),
+        url: sourceUrlInput || metadata?.url || (effectiveDoi ? `https://doi.org/${effectiveDoi}` : ""),
+        abstract: metadata?.abstract
+    };
+
+    const key = getPaperLibraryKey(candidate);
+    const existingIndex = state.paperLibrary.findIndex((item) => getExistingPaperLibraryItemKey(item) === key);
+
+    const downloadedOriginalPath = await saveOriginalPdfToLibrary(pdfUrlInput || candidate.url, candidate.title);
+
+    if (existingIndex >= 0) {
+        const existing = state.paperLibrary[existingIndex];
+        const merged: PaperLibraryItem = {
+            ...existing,
+            title: existing.title || candidate.title,
+            authors: existing.authors === "Unknown" ? candidate.authors : existing.authors,
+            journal: existing.journal === "Unknown journal" ? candidate.journal : existing.journal,
+            year: existing.year === "Unknown" ? candidate.year : existing.year,
+            doi: existing.doi ?? candidate.doi,
+            url: existing.url || candidate.url,
+            abstract: existing.abstract ?? candidate.abstract,
+            abstractEn: existing.abstractEn ?? candidate.abstract,
+            category: normalizedCategory,
+            themeSeed,
+            searchScope: "other",
+            originalFilePath: existing.originalFilePath ?? downloadedOriginalPath ?? undefined,
+            updatedAt: now
+        };
+
+        merged.gbtCitation = buildGbt7714Citation({
+            authors: merged.authors,
+            title: merged.title,
+            journal: merged.journal,
+            year: merged.year,
+            referenceTypeCode: merged.referenceTypeCode ?? "J",
+            doi: merged.doi,
+            url: merged.url
+        });
+
+        state.paperLibrary[existingIndex] = merged;
+        writeWorkflowState(state);
+        return { state, reused: true, importedId: merged.id };
+    }
+
+    const item: PaperLibraryItem = {
+        ...candidate,
+        id: `library-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        key,
+        category: normalizedCategory,
+        themeSeed,
+        searchScope: "other",
+        abstractEn: candidate.abstract,
+        abstractZh: undefined,
+        referenceTypeCode: "J",
+        gbtCitation: buildGbt7714Citation({
+            authors: candidate.authors,
+            title: candidate.title,
+            journal: candidate.journal,
+            year: candidate.year,
+            referenceTypeCode: "J",
+            doi: candidate.doi,
+            url: candidate.url
+        }),
+        adopted: false,
+        originalFilePath: downloadedOriginalPath ?? undefined,
+        createdAt: now,
+        updatedAt: now
+    };
+
+    state.paperLibrary.unshift(item);
+    writeWorkflowState(state);
+    return { state, reused: false, importedId: item.id };
 }
 
 function hasChineseText(input: string): boolean {
@@ -1321,31 +1772,41 @@ async function translatePaperTitlesToChinese(candidates: PaperCandidate[]): Prom
     }));
 }
 
-export async function searchPapersByTheme(category: PaperLibrarySearchCategory, theme: string, settings: SearchSettings): Promise<PaperCandidate[]> {
+export async function searchPapersByTheme(
+    category: PaperLibrarySearchCategory,
+    theme: string,
+    settings: SearchSettings,
+    page = 1
+): Promise<PaperCandidate[]> {
+    const translatedTheme = await translateThemeForSearch(theme);
+    const effectiveTheme = translatedTheme && translatedTheme !== theme
+        ? `${theme} ${translatedTheme}`
+        : theme;
+
     const jobs: Array<Promise<PaperCandidate[]>> = [];
 
     if (settings.sourceWhitelist.includes("crossref")) {
-        jobs.push(searchCrossrefByTheme(category, theme, settings));
+        jobs.push(searchCrossrefByTheme(category, effectiveTheme, settings, page));
     }
 
     if (settings.sourceWhitelist.includes("openalex")) {
-        jobs.push(searchOpenAlexByTheme(category, theme, settings));
+        jobs.push(searchOpenAlexByTheme(category, effectiveTheme, settings, page));
     }
 
     if (settings.sourceWhitelist.includes("pubmed")) {
-        jobs.push(searchPubMedByTheme(category, theme, settings));
+        jobs.push(searchPubMedByTheme(category, effectiveTheme, settings, page));
     }
 
     if (settings.sourceWhitelist.includes("webofscience")) {
-        jobs.push(searchByExternalConnector("webofscience", category, theme, settings));
+        jobs.push(searchByExternalConnector("webofscience", category, effectiveTheme, settings, page));
     }
 
     if (settings.sourceWhitelist.includes("wanfang")) {
-        jobs.push(searchByExternalConnector("wanfang", category, theme, settings));
+        jobs.push(searchByExternalConnector("wanfang", category, effectiveTheme, settings, page));
     }
 
     if (settings.sourceWhitelist.includes("cnki")) {
-        jobs.push(searchByExternalConnector("cnki", category, theme, settings));
+        jobs.push(searchByExternalConnector("cnki", category, effectiveTheme, settings, page));
     }
 
     if (jobs.length === 0) {
@@ -1357,8 +1818,15 @@ export async function searchPapersByTheme(category: PaperLibrarySearchCategory, 
     return translatePaperTitlesToChinese(deduped);
 }
 
-function getPaperLibraryKey(candidate: PaperCandidate): string {
-    const doi = String(candidate.doi ?? "").trim().toLowerCase();
+function normalizeDoi(value: string | undefined): string {
+    return String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/^https?:\/\/doi\.org\//, "");
+}
+
+function getPaperLibraryKey(candidate: Pick<PaperCandidate, "doi" | "url" | "title">): string {
+    const doi = normalizeDoi(candidate.doi);
     if (doi) {
         return `doi:${doi}`;
     }
@@ -1369,6 +1837,58 @@ function getPaperLibraryKey(candidate: PaperCandidate): string {
     }
 
     return `title:${candidate.title.trim().toLowerCase()}`;
+}
+
+function getExistingPaperLibraryItemKey(item: PaperLibraryItem): string {
+    const key = String(item.key ?? "").trim().toLowerCase();
+    if (key) {
+        return key;
+    }
+
+    return getPaperLibraryKey({
+        doi: item.doi,
+        url: item.url,
+        title: item.title
+    });
+}
+
+function buildGbt7714Citation(input: {
+    authors: string;
+    title: string;
+    journal: string;
+    year: string;
+    referenceTypeCode?: string;
+    volume?: string;
+    issue?: string;
+    pages?: string;
+    doi?: string;
+    url?: string;
+}): string {
+    const authors = String(input.authors ?? "").trim() || "佚名";
+    const title = String(input.title ?? "").trim() || "未命名文献";
+    const journal = String(input.journal ?? "").trim() || "未知刊物";
+    const year = String(input.year ?? "").trim() || "n.d.";
+    const typeCode = String(input.referenceTypeCode ?? "J").trim().toUpperCase() || "J";
+    const volume = String(input.volume ?? "").trim();
+    const issue = String(input.issue ?? "").trim();
+    const pages = String(input.pages ?? "").trim();
+    const doi = String(input.doi ?? "").trim();
+    const url = String(input.url ?? "").trim();
+
+    const periodicalDetail = [
+        year,
+        volume ? (issue ? `${volume}(${issue})` : volume) : (issue ? `(${issue})` : ""),
+        pages ? `:${pages}` : ""
+    ].filter(Boolean).join(", ");
+
+    const base = `${authors}. ${title}[${typeCode}]. ${journal}, ${periodicalDetail}.`;
+    if (doi) {
+        return `${base} DOI:${doi}.`;
+    }
+    if (url) {
+        return `${base} ${url}`;
+    }
+    return base;
 }
 
 export function getPaperLibrary(): PaperLibraryItem[] {
@@ -1398,6 +1918,127 @@ export function updatePaperLibraryKeywords(itemId: string, keywords: string[]): 
         updatedAt: getIsoDate(new Date())
     };
 
+    writeWorkflowState(state);
+    return state;
+}
+
+export function updatePaperLibraryMeta(
+    itemId: string,
+    updates: { adopted?: boolean; storageCategory?: string }
+): WorkflowState {
+    const state = readWorkflowState();
+    const index = state.paperLibrary.findIndex((item) => item.id === itemId);
+
+    if (index < 0) {
+        throw new Error("论文库条目不存在");
+    }
+
+    const now = getIsoDate(new Date());
+    const current = state.paperLibrary[index];
+    const normalizedStorageCategory = updates.storageCategory === undefined
+        ? current.storageCategory
+        : (String(updates.storageCategory).trim() || undefined);
+    const nextAdopted = updates.adopted === undefined ? current.adopted : updates.adopted;
+
+    state.paperLibrary[index] = {
+        ...current,
+        storageCategory: normalizedStorageCategory,
+        adopted: Boolean(nextAdopted),
+        adoptedAt: nextAdopted ? (current.adoptedAt ?? now) : undefined,
+        updatedAt: now
+    };
+
+    writeWorkflowState(state);
+    return state;
+}
+
+export function updatePaperLibraryRecord(
+    itemId: string,
+    updates: {
+        title?: string;
+        titleZh?: string;
+        authors?: string;
+        journal?: string;
+        year?: string;
+        doi?: string;
+        url?: string;
+        abstractEn?: string;
+        abstractZh?: string;
+        customCategories?: string[];
+        referenceTypeCode?: string;
+        volume?: string;
+        issue?: string;
+        pages?: string;
+    }
+): WorkflowState {
+    const state = readWorkflowState();
+    const index = state.paperLibrary.findIndex((item) => item.id === itemId);
+
+    if (index < 0) {
+        throw new Error("论文库条目不存在");
+    }
+
+    const current = state.paperLibrary[index];
+    const nextCustomCategories = Array.isArray(updates.customCategories)
+        ? Array.from(new Set(updates.customCategories.map((value) => String(value ?? "").trim()).filter(Boolean))).slice(0, 20)
+        : current.customCategories;
+
+    const next: PaperLibraryItem = {
+        ...current,
+        title: updates.title === undefined ? current.title : String(updates.title ?? "").trim() || current.title,
+        titleZh: updates.titleZh === undefined ? current.titleZh : (String(updates.titleZh ?? "").trim() || undefined),
+        authors: updates.authors === undefined ? current.authors : String(updates.authors ?? "").trim() || current.authors,
+        journal: updates.journal === undefined ? current.journal : String(updates.journal ?? "").trim() || current.journal,
+        year: updates.year === undefined ? current.year : String(updates.year ?? "").trim() || current.year,
+        doi: updates.doi === undefined ? current.doi : (String(updates.doi ?? "").trim() || undefined),
+        url: updates.url === undefined ? current.url : String(updates.url ?? "").trim() || current.url,
+        abstractEn: updates.abstractEn === undefined ? current.abstractEn : (String(updates.abstractEn ?? "").trim() || undefined),
+        abstractZh: updates.abstractZh === undefined ? current.abstractZh : (String(updates.abstractZh ?? "").trim() || undefined),
+        customCategories: nextCustomCategories,
+        referenceTypeCode: updates.referenceTypeCode === undefined
+            ? (current.referenceTypeCode ?? "J")
+            : (String(updates.referenceTypeCode ?? "").trim().toUpperCase() || "J"),
+        volume: updates.volume === undefined ? current.volume : (String(updates.volume ?? "").trim() || undefined),
+        issue: updates.issue === undefined ? current.issue : (String(updates.issue ?? "").trim() || undefined),
+        pages: updates.pages === undefined ? current.pages : (String(updates.pages ?? "").trim() || undefined),
+        updatedAt: getIsoDate(new Date())
+    };
+
+    next.gbtCitation = buildGbt7714Citation({
+        authors: next.authors,
+        title: next.title,
+        journal: next.journal,
+        year: next.year,
+        referenceTypeCode: next.referenceTypeCode,
+        volume: next.volume,
+        issue: next.issue,
+        pages: next.pages,
+        doi: next.doi,
+        url: next.url
+    });
+
+    state.paperLibrary[index] = next;
+    writeWorkflowState(state);
+    return state;
+}
+
+export function deletePaperLibraryItem(itemId: string): WorkflowState {
+    const state = readWorkflowState();
+    const index = state.paperLibrary.findIndex((item) => item.id === itemId);
+
+    if (index < 0) {
+        throw new Error("论文库条目不存在");
+    }
+
+    const adoptedTask = state.tasks.find((task) =>
+        ["drafted", "approved", "published"].includes(task.status)
+        && task.selectedPaperId === itemId
+    );
+    if (adoptedTask) {
+        throw new Error("该论文已采纳并进入执行流程，需永久保存，不可删除");
+    }
+
+    state.paperLibrary.splice(index, 1);
     writeWorkflowState(state);
     return state;
 }
@@ -1437,33 +2078,44 @@ export function getPaperLibraryCandidates(category: FiveDCategory, theme: string
     }));
 }
 
-export async function searchAndSavePaperLibrary(themeSeed: string, category: PaperLibrarySearchCategory): Promise<{ state: WorkflowState; addedCount: number }> {
+export async function searchAndSavePaperLibrary(
+    themeSeed: string,
+    category: PaperLibrarySearchCategory,
+    page = 1
+): Promise<{ state: WorkflowState; addedCount: number; matchedCount: number; reusedCount: number; requestedPage: number }> {
     const state = readWorkflowState();
     const normalizedTheme = themeSeed.trim();
+    const safePage = Math.max(1, Math.trunc(page));
+    const librarySearchSettings: SearchSettings = {
+        ...state.searchSettings,
+        maxResultsPerSource: LIBRARY_SEARCH_BATCH_SIZE
+    };
 
     if (!normalizedTheme) {
         throw new Error("主题不能为空");
     }
 
-    const candidates = category === "other"
+    const rawCandidates = category === "other"
         ? dedupeCandidates(
             (
                 await Promise.all(
-                    FIVE_D_CATEGORIES.map((cat) => searchPapersByTheme(cat, normalizedTheme, state.searchSettings))
+                    FIVE_D_CATEGORIES.map((cat) => searchPapersByTheme(cat, normalizedTheme, librarySearchSettings, safePage))
                 )
             ).flat()
         )
-        : await searchPapersByTheme(category, normalizedTheme, state.searchSettings);
+        : await searchPapersByTheme(category, normalizedTheme, librarySearchSettings, safePage);
+    const candidates = dedupeCandidates(rawCandidates).slice(0, LIBRARY_SEARCH_BATCH_SIZE);
     const normalizedCategory: FiveDCategory = category === "other" ? "cardio" : category;
     const searchScope: "category" | "other" = category === "other" ? "other" : "category";
     const now = getIsoDate(new Date());
     const existingIndexByKey = new Map<string, number>();
 
     state.paperLibrary.forEach((item, index) => {
-        existingIndexByKey.set(item.key, index);
+        existingIndexByKey.set(getExistingPaperLibraryItemKey(item), index);
     });
 
     let addedCount = 0;
+    let reusedCount = 0;
 
     for (const candidate of candidates) {
         const key = getPaperLibraryKey(candidate);
@@ -1478,6 +2130,7 @@ export async function searchAndSavePaperLibrary(themeSeed: string, category: Pap
                 searchScope,
                 updatedAt: now
             };
+            reusedCount += 1;
             continue;
         }
 
@@ -1488,6 +2141,19 @@ export async function searchAndSavePaperLibrary(themeSeed: string, category: Pap
             category: normalizedCategory,
             themeSeed: normalizedTheme,
             searchScope,
+            abstractEn: candidate.abstractEn ?? candidate.abstract,
+            abstractZh: candidate.abstractZh,
+            referenceTypeCode: "J",
+            gbtCitation: buildGbt7714Citation({
+                authors: candidate.authors,
+                title: candidate.title,
+                journal: candidate.journal,
+                year: candidate.year,
+                referenceTypeCode: "J",
+                doi: candidate.doi,
+                url: candidate.url
+            }),
+            adopted: false,
             createdAt: now,
             updatedAt: now
         };
@@ -1498,7 +2164,7 @@ export async function searchAndSavePaperLibrary(themeSeed: string, category: Pap
     }
 
     writeWorkflowState(state);
-    return { state, addedCount };
+    return { state, addedCount, matchedCount: candidates.length, reusedCount, requestedPage: safePage };
 }
 
 function estimateReadingTime(content: string): string {
@@ -1506,6 +2172,265 @@ function estimateReadingTime(content: string): string {
     const wordCount = plainText.length;
     const minutes = Math.max(6, Math.round(wordCount / 350));
     return `${minutes} min`;
+}
+
+const DRAFT_TEMPLATE_LABEL: Record<DraftPromptTemplate, string> = {
+    layered_progressive: "分层递进式",
+    qa_dialogue: "问答对话式",
+    compare_analysis: "对比辨析式",
+    narrative_research: "叙事研究型",
+    minimal_cards: "极简卡片式"
+};
+
+const DRAFT_STUDY_TEMPLATE_LABEL: Record<DraftStudyTemplate, string> = {
+    auto: "自动识别",
+    rct: "随机对照试验（RCT）",
+    meta_analysis: "Meta分析",
+    prospective_cohort: "前瞻性队列研究",
+    retrospective_cohort: "回顾性队列研究",
+    cross_sectional: "横断面研究",
+    cohort: "队列研究",
+    case_control: "病例对照研究",
+    diagnostic_accuracy: "诊断试验准确性研究"
+};
+
+function detectStudyTemplateFromEvidence(paper: PaperCandidate, evidenceText: string): Exclude<DraftStudyTemplate, "auto"> {
+    return detectStudyTemplateWithRule(paper, evidenceText).template;
+}
+
+function detectStudyTemplateWithRule(
+    paper: PaperCandidate,
+    evidenceText: string
+): { template: Exclude<DraftStudyTemplate, "auto">; rule: string } {
+    const corpus = `${paper.title}\n${paper.abstract ?? ""}\n${evidenceText.slice(0, 5000)}`.toLowerCase();
+
+    if (/randomi[sz]ed|rct|double[- ]blind|placebo|trial|意向性治疗|itt|随机对照|双盲|安慰剂/.test(corpus)) {
+        return { template: "rct", rule: "命中随机试验关键词（rct/randomized/double-blind/placebo）" };
+    }
+
+    if (/meta[- ]analysis|systematic review|forest plot|i\^?2|heterogeneity|publication bias|grade|系统综述|荟萃|异质性|漏斗图/.test(corpus)) {
+        return { template: "meta_analysis", rule: "命中综述/异质性关键词（meta-analysis/systematic review/I²/heterogeneity）" };
+    }
+
+    if (/prospective\s+cohort|prospective\b|baseline|follow-up|time-to-event|person-years|cox\s+proportional\s+hazards|survival\s+analysis/.test(corpus)) {
+        return { template: "prospective_cohort", rule: "命中前瞻队列关键词（prospective/follow-up/person-years/Cox）" };
+    }
+
+    if (/retrospective\s+cohort|retrospective\b|historical\s+cohort|registry\s+cohort/.test(corpus)) {
+        return { template: "retrospective_cohort", rule: "命中回顾队列关键词（retrospective/historical cohort）" };
+    }
+
+    if (/cross-sectional|cross\s+sectional|prevalence|survey|single\s+time\s+point|snapshot/.test(corpus)) {
+        return { template: "cross_sectional", rule: "命中横断面关键词（cross-sectional/prevalence/survey）" };
+    }
+
+    if (/cohort|longitudinal|hazard ratio|hr\b|队列|随访|纵向/.test(corpus)) {
+        return { template: "cohort", rule: "命中泛队列关键词（cohort/longitudinal/HR）" };
+    }
+
+    if (/case[- ]control|odds ratio|\bor\b|matched|病例对照|回顾性|匹配/.test(corpus)) {
+        return { template: "case_control", rule: "命中病例对照关键词（case-control/OR/matched）" };
+    }
+
+    if (/sensitivity|specificity|auc|roc|ppv|npv|diagnostic|screening|gold standard|灵敏度|特异度|诊断|筛查|金标准/.test(corpus)) {
+        return { template: "diagnostic_accuracy", rule: "命中诊断准确性关键词（sensitivity/specificity/AUC/ROC/PPV/NPV）" };
+    }
+
+    return { template: "cohort", rule: "未命中强特征，按默认规则归类为队列研究（待人工复核）" };
+}
+
+function extractStudyDetectionEvidence(
+    template: Exclude<DraftStudyTemplate, "auto">,
+    paper: PaperCandidate,
+    evidenceText: string
+): string[] {
+    const sourceText = `${paper.title}. ${paper.abstract ?? ""}. ${evidenceText}`;
+    const sentences = sourceText
+        .split(/(?<=[.!?])\s+|\n+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item) => /[a-zA-Z]/.test(item));
+
+    const patternMap: Record<Exclude<DraftStudyTemplate, "auto">, RegExp> = {
+        rct: /randomized controlled trial|randomly assigned|allocation|intervention group|control group|placebo|double-blind|single-blind|open-label|intention-to-treat|per-protocol/i,
+        meta_analysis: /systematic review|meta-analysis|pooled estimate|forest plot|i²|heterogeneity|prisma|cochrane|prospero|grade/i,
+        prospective_cohort: /prospective cohort|baseline|follow-up|incidence rate|person-years|cox proportional hazards|time-to-event|survival analysis/i,
+        retrospective_cohort: /retrospective cohort|historical cohort|registry-based cohort/i,
+        cross_sectional: /cross-sectional|prevalence|survey|single time point|snapshot|representative sample/i,
+        cohort: /cohort|follow-up|longitudinal|hazard ratio|time-to-event|survival analysis/i,
+        case_control: /case-control|cases and controls|matched pairs|odds ratio|conditional logistic regression|exposure history/i,
+        diagnostic_accuracy: /sensitivity|specificity|roc curve|auc|gold standard|reference standard|positive predictive value|negative predictive value|ppv|npv/i
+    };
+
+    const directMatches = sentences
+        .filter((sentence) => patternMap[template].test(sentence))
+        .slice(0, 5);
+
+    if (directMatches.length >= 3) {
+        return directMatches;
+    }
+
+    const fallback = sentences
+        .filter((sentence) => sentence.length >= 40)
+        .slice(0, Math.max(3, 5 - directMatches.length));
+
+    return Array.from(new Set([...directMatches, ...fallback])).slice(0, 5);
+}
+
+async function detectStudyTemplateByLLM(
+    paper: PaperCandidate,
+    evidenceText: string
+): Promise<{ template: Exclude<DraftStudyTemplate, "auto">; rule: string } | null> {
+    const prompt = `Read the paper information and classify study design.\n\nReturn ONE label only from:\n- rct\n- meta_analysis\n- prospective_cohort\n- retrospective_cohort\n- cross_sectional\n- cohort\n- case_control\n- diagnostic_accuracy\n\nEnglish design signals:\n- rct: randomized controlled trial, randomly assigned, allocation, intervention group, control group, placebo, double-blind, single-blind, open-label, intention-to-treat, per-protocol\n- meta_analysis: systematic review, meta-analysis, pooled estimate, forest plot, I² statistic, heterogeneity, PRISMA, Cochrane, PROSPERO, GRADE\n- prospective_cohort: prospective cohort, baseline, follow-up, incidence rate, person-years, Cox proportional hazards, time-to-event, survival analysis\n- retrospective_cohort: retrospective cohort, historical cohort, registry-based cohort\n- cross_sectional: cross-sectional, prevalence, survey, single time point, snapshot, representative sample\n- case_control: case-control, cases and controls, matched pairs, odds ratio, conditional logistic regression, retrospective exposure history\n- diagnostic_accuracy: sensitivity, specificity, ROC curve, AUC, gold/reference standard, PPV, NPV\n\nTitle: ${paper.title}\nAbstract: ${paper.abstract ?? ""}\nEvidence snippet: ${evidenceText.slice(0, 4000)}`;
+
+    const provider = (process.env.LLM_PROVIDER ?? "deepseek").toLowerCase();
+    const normalize = (value: string): Exclude<DraftStudyTemplate, "auto"> | null => {
+        const label = value.trim().toLowerCase().replace(/[`"'\s]/g, "");
+        if (
+            label === "rct"
+            || label === "meta_analysis"
+            || label === "prospective_cohort"
+            || label === "retrospective_cohort"
+            || label === "cross_sectional"
+            || label === "cohort"
+            || label === "case_control"
+            || label === "diagnostic_accuracy"
+        ) {
+            return label;
+        }
+        return null;
+    };
+
+    if (provider === "openai") {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            return null;
+        }
+
+        try {
+            const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+            const response = await fetch("https://api.openai.com/v1/responses", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model,
+                    input: prompt,
+                    temperature: 0
+                }),
+                cache: "no-store"
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const payload = await response.json() as { output_text?: string };
+            const normalized = normalize(String(payload.output_text ?? ""));
+            if (!normalized) {
+                return null;
+            }
+            return { template: normalized, rule: `LLM识别（${model}）` };
+        } catch {
+            return null;
+        }
+    }
+
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+        return null;
+    }
+
+    try {
+        const model = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+        const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are a medical study-design classifier. Output exactly one label: rct/meta_analysis/prospective_cohort/retrospective_cohort/cross_sectional/cohort/case_control/diagnostic_accuracy"
+                    },
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ],
+                temperature: 0
+            }),
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const payload = await response.json() as {
+            choices?: Array<{ message?: { content?: string } }>;
+        };
+        const normalized = normalize(String(payload.choices?.[0]?.message?.content ?? ""));
+        if (!normalized) {
+            return null;
+        }
+        return { template: normalized, rule: `LLM识别（${model}）` };
+    } catch {
+        return null;
+    }
+}
+
+function buildStudyTemplateInstructions(template: Exclude<DraftStudyTemplate, "auto">): string {
+    const instructions: Record<Exclude<DraftStudyTemplate, "auto">, string> = {
+        rct: `\n【研究类型专项要求：RCT】\n- 开篇必须写明“随机对照试验，证据等级较高”，解释随机分组（可用“抽签分组”类比）\n- 使用 PICO 表格/分点清晰呈现：研究对象、干预、对照、结局\n- 关键数字优先解读 ARR 与 NNT，RRR 仅作补充\n- 解释置信区间，不夸大显著性\n- 必须评估内部真实性：随机化、盲法、失访率、ITT\n- 必须评估外部真实性：人群可比性、现实可行性、随访时长\n- 强调“统计学显著不等于临床显著”\n- 必须加入警示：严格控制条件下效果在现实中可能不同。`,
+        meta_analysis: `\n【研究类型专项要求：Meta分析】\n- 开篇解释“研究的研究”，并提示纳入研究质量决定上限\n- 展示证据地图：研究数、类型、总样本量、时间跨度、地理分布\n- 用通俗方式解释合并效应与森林图结论方向\n- 核心解释异质性 I² 及其含义，并给出可能来源（设计/人群/剂量）\n- 必须讨论发表偏倚风险（漏斗图思路）\n- 给出 GRADE 质量分级与降级原因\n- 输出“建议强度”（强推荐/弱推荐）并说明条件。`,
+        prospective_cohort: `\n【研究类型专项要求：前瞻性队列】\n- 强调“先测暴露再随访结局”，说明时间顺序优势\n- 必须写清 baseline、follow-up 时长、失访率\n- 解释 HR/RR 的临床含义与剂量-反应关系\n- 必须说明混杂控制与残余混杂\n- 必须加入警示：观察性关联不等于因果。`,
+        retrospective_cohort: `\n【研究类型专项要求：回顾性队列】\n- 说明使用历史数据/登记队列，强调效率与信息偏倚风险\n- 必须写清队列来源、暴露与结局定义、随访窗口\n- 解释 HR/RR 的临床意义并讨论数据缺失影响\n- 必须加入警示：回顾性证据受记录质量与未测混杂影响。`,
+        cross_sectional: `\n【研究类型专项要求：横断面】\n- 明确“单时间点快照”，强调只能说明相关性\n- 必须报告样本量、应答率、代表性\n- 解释 prevalence/OR 等指标，不做因果化表述\n- 必须加入警示：无法确定时间先后，不能推断谁导致谁。`,
+        cohort: `\n【研究类型专项要求：队列研究】\n- 开篇解释“追踪观察”设计，并明确其与 RCT 的差异\n- 必须写出队列类型（前瞻/回顾）、随访时长、失访情况\n- 解释暴露定义与测量方式（客观 vs 自报）\n- 详细说明混杂因素控制与残余混杂可能\n- 若有剂量-反应或阈值/U 型关系，必须单列说明\n- 简要采用 Bradford Hill 框架评估因果推断边界\n- 必须使用警示语：观察性证据支持“相关”而非“因果”。`,
+        case_control: `\n【研究类型专项要求：病例对照】\n- 开篇解释为何采用病例对照（罕见病/长潜伏期）\n- 说明病例定义、对照来源、匹配因素及其合理性\n- 解释 OR 的意义，并提醒 OR≠风险（罕见病时近似 RR）\n- 必须评估三类偏倚：回忆偏倚、选择偏倚、生存偏倚\n- 对结论强度保持保守，强调需队列/RCT/Meta 进一步验证\n- 必须加入警示语：无法直接估计真实发病风险。`,
+        diagnostic_accuracy: `\n【研究类型专项要求：诊断试验准确性】\n- 开篇明确目标疾病、现有金标准与新检测的临床定位\n- 用四格表逻辑解释真阳性/假阴性/假阳性/真阴性\n- 必须解读灵敏度、特异度、PPV、NPV、AUC，并说明受患病率影响\n- 按场景判断：筛查（偏重灵敏度）vs 确诊（偏重特异度）\n- 说明是否采用金标准对照、是否盲法判读\n- 必须讨论“准确性 ≠ 临床有效性/结局改善”与成本可及性。`
+    };
+
+    return instructions[template];
+}
+
+function buildDraftPromptByTemplate(input: {
+    task: WorkflowTask;
+    paper: PaperCandidate;
+    evidenceType: "fulltext" | "abstract";
+    evidenceText: string;
+    promptTemplate: DraftPromptTemplate;
+    studyTemplate: DraftStudyTemplate;
+}): string {
+    const { task, paper, evidenceType, evidenceText, promptTemplate, studyTemplate } = input;
+    const templateLabel = DRAFT_TEMPLATE_LABEL[promptTemplate];
+    const resolvedStudyTemplate = studyTemplate === "auto"
+        ? detectStudyTemplateFromEvidence(paper, evidenceText)
+        : studyTemplate;
+    const studyTemplateLabel = DRAFT_STUDY_TEMPLATE_LABEL[resolvedStudyTemplate];
+    const studyInstructions = buildStudyTemplateInstructions(resolvedStudyTemplate);
+    const sharedHeader = `你是一位精通医学文献的科普专家。请基于英文医学论文证据，完成“研究类型识别 + 关键信息提取 + 中文科普生成 + 质量自检”一体化输出。\n\n【输出总原则】\n- 严格基于原文，不补充论文外事实\n- 区分事实与判断，避免因果夸大\n- 统计量保留原始格式（HR/OR/RR + 95% CI）并做中文临床意义转化\n- 局限部分不少于正文约 10%\n- 必须包含“非医疗建议”声明与 Citation 组件\n\n主题：${task.theme}\n当前主维度：${CATEGORY_LABEL[task.category]}\n写作模板：${templateLabel}\n证据来源类型：${evidenceType === "fulltext" ? "全文" : "摘要"}\n\n【任务一：研究类型识别】\n- 先给出研究类型（rct/meta_analysis/prospective_cohort/retrospective_cohort/cross_sectional/cohort/case_control/diagnostic_accuracy）\n- 给出 3-5 条识别依据（英文原文短语）\n- 给出识别置信度（High/Medium/Low）\n\n【任务二：关键信息提取】\n- 按研究类型抽取对应字段（PICO / 异质性I² / 随访与混杂 / OR / 灵敏度特异度等）\n- 关键条目用“英文原文 + 中文翻译 + 通俗解释”表达\n\n【术语中英对照（至少覆盖文中出现项）】\nRandomization=随机化；Blinding/Masking=盲法；Allocation concealment=分配隐藏；Intention-to-treat=意向性治疗分析；Confidence interval=置信区间；Hazard ratio=风险比；Odds ratio=比值比；Risk ratio=相对风险；Number needed to treat=需治疗人数；I² statistic=I²统计量；Publication bias=发表偏倚；Confounding=混杂；Selection bias=选择偏倚；Recall bias=回忆偏倚；Sensitivity=灵敏度；Specificity=特异度；PPV=阳性预测值；NPV=阴性预测值。\n\n【任务三：中文科普文章结构】\n- 标题（主标题+副标题：期刊与年份）\n- 开篇（研究类型与证据等级 + 一句话核心发现）\n- 研究背景\n- 研究是怎么做的（解释关键方法）\n- 发现了什么（保留统计量 + 临床转化）\n- 这说明了什么（与既往证据一致性）\n- 需要注意的局限（类型固有限制 + 作者自述限制）\n- 对您意味着什么（分人群建议）\n- 原文信息（完整引用、DOI、术语表）\n\n【任务四：质量自检清单】\n- 研究类型识别准确\n- 数据与原文一致\n- 统计量有临床解释\n- 类型警示语已包含\n- 局限比例达标\n- 非医疗建议声明已包含\n\n【类型专用警示语】\n- RCT：严格控制条件下效果，临床实践可能不同\n- Meta分析：纳入研究质量参差不齐，结论受异质性影响\n- 队列：观察性关联，不等于因果\n- 病例对照：回忆偏倚风险高，需其他设计验证\n- 横断面：单时间点观察，无法判定时间先后\n- 诊断研究：准确性不等于临床有效性\n\n【论文元信息】\n标题：${paper.title}\n作者：${paper.authors}\n期刊：${paper.journal}\n年份：${paper.year}\n链接：${paper.url}\n\n【证据正文】\n${evidenceText}\n`;
+
+    const templateInstructions: Record<DraftPromptTemplate, string> = {
+        layered_progressive: `\n【输出结构（分层递进式）】\n1) 先读要点（30秒速览）：1-2条引用式结论，必须含证据等级提示（如“观察性研究，关联非因果”）\n2) 研究背景与价值：说明为何值得关注，以及该研究在已有知识中的位置\n3) 关键概念解释：用类比解释关键方法，避免公式堆砌\n4) 证据分层呈现：按时间/剂量/人群组织，每层都写“通俗数据转化 + 临床意义 + 适用边界”\n5) 研究者的坦诚：局限部分不少于全文 10%\n6) 个体化建议：用“如果您...那么...”给出行动建议与检查清单\n7) 原文信息与免责声明\n\n【语言】\n- 风格温和、克制、可执行\n- 段落适配手机阅读，每段不宜过长\n- 必须包含“五维联动”小节：心血管与代谢、身体活动、认知活力、健康饮食、社交与情绪各 1 条建议，其中主维度更深入\n\n请直接输出 MDX 正文，不要 frontmatter。`,
+        qa_dialogue: `\n【输出结构（问答对话式）】\n采用“虚拟访谈”写法，模拟资深医生回答中老年读者提问。\n- 设计 5-7 个问题，至少覆盖：研究价值、方法可信度、核心数字、个体应用、局限警示、明日行动\n- 回答使用第一人称“我们研究发现...”\n- 每个回答约 120-180 字\n- 关键数字用【】强调\n- 保持“关联非因果”的审慎语气\n\n结尾必须有：\n- 专家名片（基于论文作者信息）\n- 原文 DOI/链接\n- 非医疗建议声明\n- Citation 组件\n\n请直接输出 MDX 正文，不要 frontmatter。`,
+        compare_analysis: `\n【输出结构（对比辨析式）】\n标题格式：\n【澄清】关于“${task.theme}”的常见说法与科学证据\n\n正文至少包含：\n1) 流行说法 vs 研究证据（表格或分点对照）\n2) 证据如何产生（研究类型、样本、方法特点）\n3) 哪些说法有支持\n4) 哪些说法被高估\n5) 哪些说法明显误读\n6) 理性行动建议（可以做/不必做/谨慎做）\n\n语气要求：不嘲讽读者，纠偏时给出原文依据，持续强调证据边界。\n文末附：非医疗建议声明 + Citation 组件。\n\n请直接输出 MDX 正文，不要 frontmatter。`,
+        narrative_research: `\n【输出结构（叙事研究型）】\n写成“科学探秘故事”，按时间线展开：\n- 问题如何产生\n- 研究者如何设计\n- 数据揭示了什么\n- 学界如何审慎看待（局限与争议）\n\n写作要点：\n- 可以提及论文作者姓名与研究场景\n- 关键方法用“为了验证这个，他们不得不...”自然引出\n- 情感弧线：问题紧迫性 → 探索曲折 → 审慎希望\n- 局限不能作为附录，需融入主叙事\n\n结尾必须包含：\n- 可执行建议（分层人群）\n- 非医疗建议声明\n- Citation 组件\n\n请直接输出 MDX 正文，不要 frontmatter。`,
+        minimal_cards: `\n【输出结构（极简卡片式）】\n总字数目标 600-900 字，阅读时间标注“约3分钟”。\n固定模块：\n📌 一句话结论（最保守表述）\n📊 关键数字（最多 3 个，含通俗转化）\n🔍 研究是怎么回事（研究类型/样本量/方法，各 1 句）\n💡 对您意味着什么（值得关注/暂无需担心）\n⚠️ 重要提醒（局限 + 不适用人群）\n📚 原文信息（作者、期刊、年份、DOI/链接）\n\n额外要求：\n- 保持克制，不夸大\n- 至少点出 1 条“五维联动”建议\n- 文末加入非医疗建议声明与 Citation 组件\n\n请直接输出 MDX 正文，不要 frontmatter。`
+    };
+
+    const headerWithStudyTemplate = sharedHeader.replace(
+        `写作模板：${templateLabel}`,
+        `写作模板：${templateLabel}\n研究类型模板：${studyTemplateLabel}`
+    );
+
+    return `${headerWithStudyTemplate}\n${studyInstructions}\n${templateInstructions[promptTemplate]}`;
 }
 
 function buildFallbackDraft(task: WorkflowTask, paper: PaperCandidate): { title: string; summary: string; content: string } {
@@ -1517,8 +2442,101 @@ function buildFallbackDraft(task: WorkflowTask, paper: PaperCandidate): { title:
     return { title, summary, content };
 }
 
-async function callLLMForDraft(task: WorkflowTask, paper: PaperCandidate): Promise<{ title: string; summary: string; content: string } | null> {
-    const prompt = `你是资深医学科普编辑。请基于以下论文信息，生成一篇中文科普稿（MDX 正文，不包含 frontmatter）。\n\n要求：\n1) 面向 50+ 人群，语气温和、严谨、可执行。\n2) 结构包含：背景、机制解释、证据强弱、常见误区、行动清单。\n3) 不夸大疗效，明确研究边界。\n4) 在文末添加一条 Citation 组件：<Citation title=... authors=... journal=... year=... url=... />。\n5) 正文长度约 1200~1800 中文字。\n6) 必须围绕一个主题主线（即“主题”字段），并从 Finger5D 五个维度展开：心血管与代谢、身体活动、认知活力、健康饮食、社交与情绪。\n7) 其中“维度”字段是当前任务主维度，需要写得更深入；其余 4 个维度写关联影响与协同建议。\n8) 输出中必须有“\"五维联动\"”小节，按五个维度分别给出 1 条可执行建议。\n\n主题：${task.theme}\n维度：${task.category}\n论文标题：${paper.title}\n作者：${paper.authors}\n期刊：${paper.journal}\n年份：${paper.year}\n摘要：${paper.abstract ?? "(无摘要)"}\n链接：${paper.url}`;
+async function extractTextFromOriginalFile(relativePath: string): Promise<string | null> {
+    const absolutePath = path.resolve(process.cwd(), relativePath);
+    const libraryDir = path.resolve(path.join(DATA_DIR, "paper-library"));
+
+    if (!absolutePath.startsWith(libraryDir) || !fs.existsSync(absolutePath)) {
+        return null;
+    }
+
+    const extension = path.extname(absolutePath).toLowerCase();
+
+    try {
+        if (extension === ".pdf") {
+            const buffer = fs.readFileSync(absolutePath);
+            const { PDFParse } = await import("pdf-parse");
+            const parser = new PDFParse({ data: buffer });
+            const parsed = await parser.getText();
+            const parsedText = typeof parsed === "string"
+                ? parsed
+                : String((parsed as { text?: string })?.text ?? "");
+            const text = parsedText.replace(/\s+/g, " ").trim();
+            await parser.destroy();
+            return text || null;
+        }
+
+        const raw = fs.readFileSync(absolutePath, "utf8");
+        if (extension === ".html" || extension === ".htm") {
+            return stripHtmlTags(raw).replace(/\s+/g, " ").trim() || null;
+        }
+
+        return raw.replace(/\s+/g, " ").trim() || null;
+    } catch {
+        return null;
+    }
+}
+
+async function buildDraftEvidenceContext(task: WorkflowTask, paper: PaperCandidate): Promise<{ evidenceType: "fulltext" | "abstract"; evidenceText: string }> {
+    const state = readWorkflowState();
+    const libraryItem = state.paperLibrary.find((item) => item.id === paper.id);
+    const originalPath = libraryItem?.originalFilePath;
+
+    if (originalPath) {
+        const fullText = await extractTextFromOriginalFile(originalPath);
+        if (fullText) {
+            return {
+                evidenceType: "fulltext",
+                evidenceText: fullText.slice(0, 24000)
+            };
+        }
+    }
+
+    return {
+        evidenceType: "abstract",
+        evidenceText: paper.abstract ?? "(无摘要)"
+    };
+}
+
+async function callLLMForDraft(
+    task: WorkflowTask,
+    paper: PaperCandidate,
+    promptTemplate: DraftPromptTemplate,
+    studyTemplate: DraftStudyTemplate
+): Promise<{
+    title: string;
+    summary: string;
+    content: string;
+    requestedStudyTemplate: DraftStudyTemplate;
+    resolvedStudyTemplate: Exclude<DraftStudyTemplate, "auto">;
+    studyDetectionRule: string;
+    studyDetectionEvidence: string[];
+} | null> {
+    const evidence = await buildDraftEvidenceContext(task, paper);
+    const fallbackDetection = detectStudyTemplateWithRule(paper, evidence.evidenceText);
+    const llmDetection = studyTemplate === "auto"
+        ? await detectStudyTemplateByLLM(paper, evidence.evidenceText)
+        : null;
+    const resolvedStudyTemplate = studyTemplate === "auto"
+        ? (llmDetection?.template ?? fallbackDetection.template)
+        : studyTemplate;
+    const detectionRule = studyTemplate === "auto"
+        ? (llmDetection?.rule ?? `规则兜底：${fallbackDetection.rule}`)
+        : "手动指定";
+    const resolvedStudyLabel = DRAFT_STUDY_TEMPLATE_LABEL[resolvedStudyTemplate];
+    const studyDisplayLabel = studyTemplate === "auto"
+        ? `${DRAFT_STUDY_TEMPLATE_LABEL.auto}→${resolvedStudyLabel}`
+        : resolvedStudyLabel;
+    const studyDetectionEvidence = extractStudyDetectionEvidence(resolvedStudyTemplate, paper, evidence.evidenceText);
+
+    const prompt = buildDraftPromptByTemplate({
+        task,
+        paper,
+        evidenceType: evidence.evidenceType,
+        evidenceText: evidence.evidenceText,
+        promptTemplate,
+        studyTemplate: resolvedStudyTemplate
+    });
 
     const provider = (process.env.LLM_PROVIDER ?? "deepseek").toLowerCase();
 
@@ -1557,9 +2575,18 @@ async function callLLMForDraft(task: WorkflowTask, paper: PaperCandidate): Promi
                 return null;
             }
 
-            const title = `${task.theme}：科学证据与实践建议`;
-            const summary = `围绕 ${task.theme}，结合最新论文证据整理机制、边界与可执行建议。`;
-            return { title, summary, content };
+            const title = `${task.theme}：${DRAFT_TEMPLATE_LABEL[promptTemplate]}科普解读`;
+            const summary = `文风：${DRAFT_TEMPLATE_LABEL[promptTemplate]}；研究类型：${studyDisplayLabel}；围绕 ${task.theme}，基于${evidence.evidenceType === "fulltext" ? "全文" : "摘要"}证据整理关键发现与行动建议。`;
+            const contentWithMeta = `> 生成信息：文风=${DRAFT_TEMPLATE_LABEL[promptTemplate]}；研究类型=${studyDisplayLabel}；识别依据=${detectionRule}；证据来源=${evidence.evidenceType === "fulltext" ? "全文" : "摘要"}\n\n${content}`;
+            return {
+                title,
+                summary,
+                content: contentWithMeta,
+                requestedStudyTemplate: studyTemplate,
+                resolvedStudyTemplate,
+                studyDetectionRule: detectionRule,
+                studyDetectionEvidence
+            };
         } catch {
             return null;
         }
@@ -1613,21 +2640,48 @@ async function callLLMForDraft(task: WorkflowTask, paper: PaperCandidate): Promi
             return null;
         }
 
-        const title = `${task.theme}：科学证据与实践建议`;
-        const summary = `围绕 ${task.theme}，结合最新论文证据整理机制、边界与可执行建议。`;
-        return { title, summary, content };
+        const title = `${task.theme}：${DRAFT_TEMPLATE_LABEL[promptTemplate]}科普解读`;
+        const summary = `文风：${DRAFT_TEMPLATE_LABEL[promptTemplate]}；研究类型：${studyDisplayLabel}；围绕 ${task.theme}，基于${evidence.evidenceType === "fulltext" ? "全文" : "摘要"}证据整理关键发现与行动建议。`;
+        const contentWithMeta = `> 生成信息：文风=${DRAFT_TEMPLATE_LABEL[promptTemplate]}；研究类型=${studyDisplayLabel}；识别依据=${detectionRule}；证据来源=${evidence.evidenceType === "fulltext" ? "全文" : "摘要"}\n\n${content}`;
+        return {
+            title,
+            summary,
+            content: contentWithMeta,
+            requestedStudyTemplate: studyTemplate,
+            resolvedStudyTemplate,
+            studyDetectionRule: detectionRule,
+            studyDetectionEvidence
+        };
     } catch {
         return null;
     }
 }
 
-export async function generateDraftForTask(task: WorkflowTask): Promise<{ title: string; summary: string; content: string }> {
+export async function generateDraftForTask(
+    task: WorkflowTask,
+    options?: { promptTemplate?: DraftPromptTemplate; studyTemplate?: DraftStudyTemplate }
+): Promise<{
+    title: string;
+    summary: string;
+    content: string;
+    requestedStudyTemplate?: DraftStudyTemplate;
+    resolvedStudyTemplate?: Exclude<DraftStudyTemplate, "auto">;
+    studyDetectionRule?: string;
+    studyDetectionEvidence?: string[];
+}> {
     const selectedPaper = task.paperCandidates.find((paper) => paper.id === task.selectedPaperId);
     if (!selectedPaper) {
         throw new Error("No selected paper for this task");
     }
 
-    const llmResult = await callLLMForDraft(task, selectedPaper);
+    const promptTemplate = DRAFT_PROMPT_TEMPLATES.includes(options?.promptTemplate as DraftPromptTemplate)
+        ? options?.promptTemplate as DraftPromptTemplate
+        : (task.draftPromptTemplate ?? "layered_progressive");
+    const studyTemplate = DRAFT_STUDY_TEMPLATES.includes(options?.studyTemplate as DraftStudyTemplate)
+        ? options?.studyTemplate as DraftStudyTemplate
+        : (task.draftStudyTemplate ?? "auto");
+
+    const llmResult = await callLLMForDraft(task, selectedPaper, promptTemplate, studyTemplate);
     if (llmResult) {
         return llmResult;
     }
@@ -1796,7 +2850,7 @@ export async function downloadPaperLibraryItem(
         const response = await fetch(item.url, { cache: "no-store" });
 
         if (!response.ok) {
-            throw new Error("下载原文失败，请检查链接可用性");
+            throw new Error("下载原文失败：来源可能仅提供元数据/摘要，或链接不可直接抓取全文");
         }
 
         const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
