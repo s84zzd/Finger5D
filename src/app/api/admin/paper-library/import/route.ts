@@ -4,6 +4,10 @@ import type { FiveDCategory } from "@/lib/admin-types";
 
 export const runtime = "nodejs";
 
+/**
+ * 单条导入入库：通过标题/DOI/来源 URL 拉取元数据，可选 PDF 直链直接全文落库。
+ * 与外部检索入库并列，适用于已下载全文或从外部筛选后按 URL/DOI 导入。
+ */
 export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({})) as {
         title?: string;
@@ -12,6 +16,7 @@ export async function POST(request: NextRequest) {
         pdfUrl?: string;
         category?: FiveDCategory;
         themeSeed?: string;
+        keywords?: string[];
     };
 
     try {
@@ -21,7 +26,8 @@ export async function POST(request: NextRequest) {
             sourceUrl: body.sourceUrl,
             pdfUrl: body.pdfUrl,
             category: body.category,
-            themeSeed: body.themeSeed
+            themeSeed: body.themeSeed,
+            keywords: body.keywords
         });
 
         return NextResponse.json({

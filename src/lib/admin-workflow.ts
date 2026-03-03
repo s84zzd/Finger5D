@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { getCoreSummarySystemPrompt } from "@/lib/core-summary-prompts";
 import {
     DRAFT_PROMPT_TEMPLATES,
     DRAFT_STUDY_TEMPLATES,
@@ -32,7 +33,7 @@ const DATA_DIR = path.join(process.cwd(), "src", "data");
 const DATA_FILE = path.join(DATA_DIR, "admin-workflow.json");
 
 const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
-    sourceWhitelist: ["crossref"],
+    sourceWhitelist: ["crossref", "pubmed"],
     sinceYear: new Date().getFullYear() - 5,
     maxResultsPerSource: 8,
     minRelevanceScore: 2,
@@ -121,6 +122,7 @@ const CATEGORY_LABEL: Record<FiveDCategory, string> = {
     social: "社交与情绪"
 };
 
+/** 外部论文库检索每批数量（如 PubMed），每批 20 篇列队筛选后再追加下一批 */
 const LIBRARY_SEARCH_BATCH_SIZE = 20;
 
 type PaperLibrarySearchCategory = FiveDCategory | "other";
@@ -327,6 +329,8 @@ function normalizePaperLibrary(input: PaperLibraryItem[] | undefined): PaperLibr
         storageCategory: item.storageCategory ? String(item.storageCategory).trim() : undefined,
         adopted: Boolean(item.adopted),
         adoptedAt: item.adoptedAt ? String(item.adoptedAt) : undefined,
+        adoptedWeekKey: item.adoptedWeekKey ? String(item.adoptedWeekKey) : undefined,
+        adoptedMonthKey: item.adoptedMonthKey ? String(item.adoptedMonthKey) : undefined,
         localFilePath: item.localFilePath ? String(item.localFilePath) : undefined,
         summaryFilePath: item.summaryFilePath
             ? String(item.summaryFilePath)
@@ -1143,6 +1147,50 @@ function parsePubMedYear(pubDate: string): string {
     return match ? match[0] : "Unknown";
 }
 
+/** 通过 efetch 拉取 PubMed 摘要（esummary 不包含摘要），一次请求多篇 */
+async function fetchPubMedAbstracts(pmids: string[]): Promise<Map<string, string>> {
+    if (pmids.length === 0) {
+        return new Map();
+    }
+    const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
+    const apiKey = process.env.NCBI_API_KEY ?? process.env.PUBMED_API_KEY;
+    const apiKeySuffix = apiKey ? `&api_key=${encodeURIComponent(apiKey.trim())}` : "";
+    const idParam = pmids.slice(0, 200).join(",");
+
+    try {
+        const res = await fetch(`${base}/efetch.fcgi?db=pubmed&id=${encodeURIComponent(idParam)}&retmode=xml${apiKeySuffix}`, {
+            cache: "no-store"
+        });
+        if (!res.ok) {
+            return new Map();
+        }
+        const xml = await res.text();
+        const map = new Map<string, string>();
+        const articleBlocks = xml.split(/<PubmedArticle>/i);
+        for (let i = 1; i < articleBlocks.length; i++) {
+            const block = articleBlocks[i];
+            const pmIdMatch = block.match(/<ArticleId\s+IdType="pubmed">(\d+)<\/ArticleId>/);
+            const pmid = pmIdMatch ? pmIdMatch[1] : "";
+            const abstractMatch = block.match(/<Abstract>([\s\S]*?)<\/Abstract>/);
+            if (!pmid || !abstractMatch) {
+                continue;
+            }
+            const raw = abstractMatch[1]
+                .replace(/<AbstractText[^>]*>/g, " ")
+                .replace(/<\/AbstractText>/g, " ")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+            if (raw) {
+                map.set(pmid, raw);
+            }
+        }
+        return map;
+    } catch {
+        return new Map();
+    }
+}
+
 async function searchPubMedByTheme(
     category: PaperLibrarySearchCategory,
     theme: string,
@@ -1156,9 +1204,11 @@ async function searchPubMedByTheme(
     const safePage = Math.max(1, Math.trunc(page));
     const retStart = Math.max(0, (safePage - 1) * settings.maxResultsPerSource);
     const base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
+    const apiKey = process.env.NCBI_API_KEY ?? process.env.PUBMED_API_KEY;
+    const apiKeySuffix = apiKey ? `&api_key=${encodeURIComponent(apiKey.trim())}` : "";
 
     try {
-        const searchResponse = await fetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${rows}&retstart=${retStart}&sort=pub+date&term=${query}`, {
+        const searchResponse = await fetch(`${base}/esearch.fcgi?db=pubmed&retmode=json&retmax=${rows}&retstart=${retStart}&sort=pub+date&term=${query}${apiKeySuffix}`, {
             cache: "no-store"
         });
 
@@ -1177,9 +1227,12 @@ async function searchPubMedByTheme(
             return [];
         }
 
-        const summaryResponse = await fetch(`${base}/esummary.fcgi?db=pubmed&retmode=json&id=${encodeURIComponent(idList.join(","))}`, {
-            cache: "no-store"
-        });
+        const [summaryResponse, abstractMap] = await Promise.all([
+            fetch(`${base}/esummary.fcgi?db=pubmed&retmode=json&id=${encodeURIComponent(idList.join(","))}${apiKeySuffix}`, {
+                cache: "no-store"
+            }),
+            fetchPubMedAbstracts(idList)
+        ]);
 
         if (!summaryResponse.ok) {
             return [];
@@ -1221,7 +1274,7 @@ async function searchPubMedByTheme(
                 year,
                 doi: undefined,
                 url: `https://pubmed.ncbi.nlm.nih.gov/${uid}/`,
-                abstract: undefined
+                abstract: abstractMap.get(String(uid)) ?? undefined
             } satisfies PaperCandidate];
         });
 
@@ -1532,6 +1585,7 @@ export async function importPaperLibraryItemFromExternal(input: {
     pdfUrl?: string;
     category?: FiveDCategory;
     themeSeed?: string;
+    keywords?: string[];
 }): Promise<{ state: WorkflowState; reused: boolean; importedId: string }> {
     const state = readWorkflowState();
     const titleInput = String(input.title ?? "").trim();
@@ -1557,6 +1611,9 @@ export async function importPaperLibraryItemFromExternal(input: {
     const now = getIsoDate(new Date());
     const normalizedCategory = input.category ?? "cardio";
     const themeSeed = String(input.themeSeed ?? "外部导入").trim() || "外部导入";
+    const importedKeywords = Array.from(
+        new Set((input.keywords ?? []).map((k) => String(k).trim()).filter(Boolean))
+    ).slice(0, 20);
 
     const candidate: PaperCandidate = {
         id: `external-${Date.now()}`,
@@ -1577,6 +1634,9 @@ export async function importPaperLibraryItemFromExternal(input: {
 
     if (existingIndex >= 0) {
         const existing = state.paperLibrary[existingIndex];
+        const mergedKeywords = importedKeywords.length > 0
+            ? Array.from(new Set([...(existing.keywords ?? []), ...importedKeywords])).slice(0, 20)
+            : existing.keywords;
         const merged: PaperLibraryItem = {
             ...existing,
             title: existing.title || candidate.title,
@@ -1590,6 +1650,7 @@ export async function importPaperLibraryItemFromExternal(input: {
             category: normalizedCategory,
             themeSeed,
             searchScope: "other",
+            keywords: mergedKeywords,
             originalFilePath: existing.originalFilePath ?? downloadedOriginalPath ?? undefined,
             updatedAt: now
         };
@@ -1616,6 +1677,7 @@ export async function importPaperLibraryItemFromExternal(input: {
         category: normalizedCategory,
         themeSeed,
         searchScope: "other",
+        keywords: importedKeywords,
         abstractEn: candidate.abstract,
         abstractZh: undefined,
         referenceTypeCode: "J",
@@ -1952,6 +2014,28 @@ export function updatePaperLibraryMeta(
     return state;
 }
 
+/** 生成草稿时标记论文采纳并永久保存，记录采纳日期、周、月供运营复盘 */
+export function markPaperLibraryItemAdoptedOnDraftGeneration(
+    state: WorkflowState,
+    itemId: string
+): WorkflowState {
+    const index = state.paperLibrary.findIndex((item) => item.id === itemId);
+    if (index < 0) {
+        return state;
+    }
+    const now = new Date();
+    state.paperLibrary[index] = {
+        ...state.paperLibrary[index],
+        adopted: true,
+        adoptedAt: getIsoDate(now),
+        adoptedWeekKey: getWeekKey(now),
+        adoptedMonthKey: getMonthKey(now),
+        updatedAt: getIsoDate(now)
+    };
+    writeWorkflowState(state);
+    return state;
+}
+
 export function updatePaperLibraryRecord(
     itemId: string,
     updates: {
@@ -2043,11 +2127,18 @@ export function deletePaperLibraryItem(itemId: string): WorkflowState {
     return state;
 }
 
+/**
+ * 从论文库取可入选当期的候选论文。按产品逻辑「论文入库即为全文已下载并保存」，
+ * 仅返回已保存全文（originalFilePath）的条目，供执行模块选取。
+ */
 export function getPaperLibraryCandidates(category: FiveDCategory, theme: string): PaperCandidate[] {
     const state = readWorkflowState();
     const normalizedTheme = theme.trim().toLowerCase();
 
     const matched = state.paperLibrary.filter((item) => {
+        if (!item.originalFilePath) {
+            return false;
+        }
         if (item.searchScope === "other") {
             return true;
         }
@@ -2078,10 +2169,91 @@ export function getPaperLibraryCandidates(category: FiveDCategory, theme: string
     }));
 }
 
+/**
+ * 从论文库确认入选当期：将已下载全文的论文填入本周第一个未选论文的任务槽。
+ * 执行模块当期最多 10 篇（由 weeklyTaskTarget 决定），超出则保留在库留用。
+ */
+export function adoptLibraryItemToCurrentPeriod(itemId: string): {
+    state: WorkflowState;
+    adopted: boolean;
+    message?: string;
+    taskId?: string;
+} {
+    const state = readWorkflowState();
+    const libraryItem = state.paperLibrary.find((item) => item.id === itemId);
+    if (!libraryItem) {
+        throw new Error("论文库条目不存在");
+    }
+    if (!libraryItem.originalFilePath) {
+        throw new Error("仅已下载全文的论文可入选当期，请先在库内下载全文");
+    }
+
+    const currentWeekKey = state.lastSyncedWeekKey;
+    if (!currentWeekKey) {
+        throw new Error("请先在执行模块同步本周规划后再入选当期");
+    }
+
+    const weekTasks = state.tasks
+        .filter((task) => task.weekKey === currentWeekKey)
+        .sort((a, b) => {
+            const catOrder = FIVE_D_CATEGORIES.indexOf(a.category) - FIVE_D_CATEGORIES.indexOf(b.category);
+            return catOrder !== 0 ? catOrder : a.sequence - b.sequence;
+        });
+    const emptyTask = weekTasks.find((task) => !task.selectedPaperId);
+    if (!emptyTask) {
+        return {
+            state,
+            adopted: false,
+            message: "当期已满（最多10篇），论文将保留在库留用"
+        };
+    }
+
+    const candidate: PaperCandidate = {
+        id: libraryItem.id,
+        source: libraryItem.source,
+        title: libraryItem.title,
+        titleZh: libraryItem.titleZh,
+        authors: libraryItem.authors,
+        journal: libraryItem.journal,
+        year: libraryItem.year,
+        doi: libraryItem.doi,
+        url: libraryItem.url,
+        abstract: libraryItem.abstract,
+        abstractEn: libraryItem.abstractEn,
+        abstractZh: libraryItem.abstractZh
+    };
+
+    const nextState = updateTask(emptyTask.id, (task) =>
+        appendTaskOperationLog(
+            {
+                ...task,
+                paperCandidates: [candidate],
+                selectedPaperId: libraryItem.id,
+                status: "paper_selected"
+            },
+            {
+                action: "adopt_to_period",
+                actor: "系统",
+                detail: "从论文库确认入选当期"
+            }
+        )
+    );
+
+    return { state: nextState, adopted: true, taskId: emptyTask.id };
+}
+
+/**
+ * 按自定义关键字检索外部文献并写入论文库。
+ * @param themeSeed 检索用自定义关键字（用户输入的查询词）
+ * @param category 入库分类（打标用）
+ * @param page 页码
+ * @param initialKeywords 可选，入库时的关键字打标
+ */
 export async function searchAndSavePaperLibrary(
     themeSeed: string,
     category: PaperLibrarySearchCategory,
-    page = 1
+    page = 1,
+    initialKeywords?: string[]
 ): Promise<{ state: WorkflowState; addedCount: number; matchedCount: number; reusedCount: number; requestedPage: number }> {
     const state = readWorkflowState();
     const normalizedTheme = themeSeed.trim();
@@ -2104,7 +2276,9 @@ export async function searchAndSavePaperLibrary(
             ).flat()
         )
         : await searchPapersByTheme(category, normalizedTheme, librarySearchSettings, safePage);
-    const candidates = dedupeCandidates(rawCandidates).slice(0, LIBRARY_SEARCH_BATCH_SIZE);
+    const deduped = dedupeCandidates(rawCandidates).slice(0, LIBRARY_SEARCH_BATCH_SIZE);
+    // 符合检索条件的先下载标题并同时翻译标题，再进入论文库做待筛查
+    const candidates = await translatePaperTitlesToChinese(deduped);
     const normalizedCategory: FiveDCategory = category === "other" ? "cardio" : category;
     const searchScope: "category" | "other" = category === "other" ? "other" : "category";
     const now = getIsoDate(new Date());
@@ -2121,13 +2295,21 @@ export async function searchAndSavePaperLibrary(
         const key = getPaperLibraryKey(candidate);
         const existingIndex = existingIndexByKey.get(key);
 
+        const normalizedKeywords = Array.from(
+            new Set((initialKeywords ?? []).map((k) => String(k).trim()).filter(Boolean))
+        ).slice(0, 20);
+
         if (existingIndex !== undefined) {
             const existing = state.paperLibrary[existingIndex];
+            const mergedKeywords = Array.from(
+                new Set([...(existing.keywords ?? []), ...normalizedKeywords])
+            ).slice(0, 20);
             state.paperLibrary[existingIndex] = {
                 ...existing,
                 category: normalizedCategory,
                 themeSeed: normalizedTheme,
                 searchScope,
+                keywords: mergedKeywords.length > 0 ? mergedKeywords : existing.keywords,
                 updatedAt: now
             };
             reusedCount += 1;
@@ -2141,6 +2323,7 @@ export async function searchAndSavePaperLibrary(
             category: normalizedCategory,
             themeSeed: normalizedTheme,
             searchScope,
+            keywords: normalizedKeywords,
             abstractEn: candidate.abstractEn ?? candidate.abstract,
             abstractZh: candidate.abstractZh,
             referenceTypeCode: "J",
@@ -2674,6 +2857,12 @@ export async function generateDraftForTask(
         throw new Error("No selected paper for this task");
     }
 
+    const state = readWorkflowState();
+    const libraryItem = state.paperLibrary.find((item) => item.id === selectedPaper.id);
+    if (libraryItem && !libraryItem.originalFilePath) {
+        throw new Error("请先下载全文后再生成草稿");
+    }
+
     const promptTemplate = DRAFT_PROMPT_TEMPLATES.includes(options?.promptTemplate as DraftPromptTemplate)
         ? options?.promptTemplate as DraftPromptTemplate
         : (task.draftPromptTemplate ?? "layered_progressive");
@@ -2687,6 +2876,202 @@ export async function generateDraftForTask(
     }
 
     return buildFallbackDraft(task, selectedPaper);
+}
+
+type CoreSummaryStudyKey = "base" | "rct" | "meta" | "cohort" | "diagnostic";
+
+function mapStudyTemplateToCoreSummaryKey(template: Exclude<DraftStudyTemplate, "auto">): CoreSummaryStudyKey {
+    switch (template) {
+        case "rct":
+            return "rct";
+        case "meta_analysis":
+            return "meta";
+        case "prospective_cohort":
+        case "retrospective_cohort":
+        case "cohort":
+            return "cohort";
+        case "diagnostic_accuracy":
+            return "diagnostic";
+        default:
+            return "base";
+    }
+}
+
+export async function generateCoreSummaryForTask(task: WorkflowTask): Promise<string> {
+    const selectedPaper = task.paperCandidates.find((paper) => paper.id === task.selectedPaperId);
+    if (!selectedPaper) {
+        throw new Error("未选择论文，无法生成核心内容摘要");
+    }
+
+    const state = readWorkflowState();
+    const libraryItem = state.paperLibrary.find((item) => item.id === selectedPaper.id);
+    if (libraryItem && !libraryItem.originalFilePath) {
+        throw new Error("请先下载全文后再生成核心内容摘要");
+    }
+
+    const evidence = await buildDraftEvidenceContext(task, selectedPaper);
+    if (evidence.evidenceType !== "fulltext") {
+        throw new Error("请先下载全文后再生成核心内容摘要");
+    }
+
+    const resolvedStudyTemplate: Exclude<DraftStudyTemplate, "auto"> =
+        task.draftStudyTemplate === "auto"
+            ? detectStudyTemplateFromEvidence(selectedPaper, evidence.evidenceText)
+            : DRAFT_STUDY_TEMPLATES.includes(task.draftStudyTemplate as DraftStudyTemplate)
+                ? (task.draftStudyTemplate as Exclude<DraftStudyTemplate, "auto">)
+                : detectStudyTemplateFromEvidence(selectedPaper, evidence.evidenceText);
+    const promptKey = mapStudyTemplateToCoreSummaryKey(resolvedStudyTemplate);
+    const systemPrompt = getCoreSummarySystemPrompt(promptKey);
+    const userMessage = `【论文元信息】\n标题：${selectedPaper.title}\n${selectedPaper.titleZh ? `中文标题：${selectedPaper.titleZh}\n` : ""}作者：${selectedPaper.authors}\n期刊：${selectedPaper.journal}\n年份：${selectedPaper.year}\nDOI：${selectedPaper.doi ?? ""}\n链接：${selectedPaper.url}\n\n【证据正文（全文）】\n${evidence.evidenceText}`;
+
+    const provider = (process.env.LLM_PROVIDER ?? "deepseek").toLowerCase();
+
+    if (provider === "openai") {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            throw new Error("未配置 OPENAI_API_KEY，无法生成核心内容摘要");
+        }
+        const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+        const response = await fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model,
+                input: `系统指令：\n${systemPrompt}\n\n用户输入：\n${userMessage}`
+            }),
+            cache: "no-store"
+        });
+        if (!response.ok) {
+            throw new Error(`LLM 请求失败: ${response.status}`);
+        }
+        const payload = await response.json() as { output_text?: string };
+        const content = payload.output_text?.trim();
+        if (!content) {
+            throw new Error("LLM 未返回有效内容");
+        }
+        return content;
+    }
+
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+        throw new Error("未配置 DEEPSEEK_API_KEY，无法生成核心内容摘要");
+    }
+    const model = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userMessage }
+            ],
+            temperature: 0.3
+        }),
+        cache: "no-store"
+    });
+    if (!response.ok) {
+        throw new Error(`LLM 请求失败: ${response.status}`);
+    }
+    const payload = await response.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = payload.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+        throw new Error("LLM 未返回有效内容");
+    }
+    return content;
+}
+
+/** 论文库内单篇预检：根据全文生成核心内容摘要（不依赖任务） */
+export async function generateCoreSummaryForLibraryItem(itemId: string): Promise<string> {
+    const state = readWorkflowState();
+    const item = state.paperLibrary.find((entry) => entry.id === itemId);
+    if (!item) {
+        throw new Error("论文库条目不存在");
+    }
+    if (!item.originalFilePath) {
+        throw new Error("请先下载全文后再预检");
+    }
+
+    const fullText = await extractTextFromOriginalFile(item.originalFilePath);
+    if (!fullText) {
+        throw new Error("无法读取全文文件");
+    }
+    const evidenceText = fullText.slice(0, 24000);
+    const resolvedStudyTemplate = detectStudyTemplateFromEvidence(item, evidenceText);
+    const promptKey = mapStudyTemplateToCoreSummaryKey(resolvedStudyTemplate);
+    const systemPrompt = getCoreSummarySystemPrompt(promptKey);
+    const userMessage = `【论文元信息】\n标题：${item.title}\n${item.titleZh ? `中文标题：${item.titleZh}\n` : ""}作者：${item.authors}\n期刊：${item.journal}\n年份：${item.year}\nDOI：${item.doi ?? ""}\n链接：${item.url}\n\n【证据正文（全文）】\n${evidenceText}`;
+
+    const provider = (process.env.LLM_PROVIDER ?? "deepseek").toLowerCase();
+    if (provider === "openai") {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            throw new Error("未配置 OPENAI_API_KEY，无法预检");
+        }
+        const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+        const response = await fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model,
+                input: `系统指令：\n${systemPrompt}\n\n用户输入：\n${userMessage}`
+            }),
+            cache: "no-store"
+        });
+        if (!response.ok) {
+            throw new Error(`LLM 请求失败: ${response.status}`);
+        }
+        const payload = await response.json() as { output_text?: string };
+        const content = payload.output_text?.trim();
+        if (!content) {
+            throw new Error("LLM 未返回有效内容");
+        }
+        return content;
+    }
+
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+        throw new Error("未配置 DEEPSEEK_API_KEY，无法预检");
+    }
+    const model = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userMessage }
+            ],
+            temperature: 0.3
+        }),
+        cache: "no-store"
+    });
+    if (!response.ok) {
+        throw new Error(`LLM 请求失败: ${response.status}`);
+    }
+    const payload = await response.json() as {
+        choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = payload.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+        throw new Error("LLM 未返回有效内容");
+    }
+    return content;
 }
 
 function sanitizeFileName(name: string, fallback: string): string {
@@ -2793,7 +3178,8 @@ async function translateTextToChinese(text: string): Promise<string | null> {
 
 async function buildSummaryExportText(item: PaperLibraryItem): Promise<string> {
     const titleZh = item.titleZh ?? item.title;
-    const abstractEn = item.abstract ? normalizeAbstractText(item.abstract) : "";
+    const rawAbstract = (item.abstract ?? item.abstractEn ?? "").trim();
+    const abstractEn = rawAbstract ? normalizeAbstractText(rawAbstract) : "";
     const translatedAbstract = abstractEn ? await translateTextToChinese(abstractEn) : null;
 
     const lines: string[] = [
@@ -2820,6 +3206,63 @@ async function buildSummaryExportText(item: PaperLibraryItem): Promise<string> {
     return `${lines.join("\n")}\n`;
 }
 
+/** 从 PubMed 条目 id 或 url 解析出 PMID */
+function extractPmidFromPubmedItem(item: PaperLibraryItem): string | null {
+    const idMatch = item.id.match(/^pubmed-(\d+)$/i);
+    if (idMatch) {
+        return idMatch[1];
+    }
+    const urlMatch = String(item.url ?? "").match(/pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)/i);
+    return urlMatch ? urlMatch[1] : null;
+}
+
+/** 若库内条目缺少摘要，则根据 DOI/PubMed 再次拉取元数据并回写，用于后续摘要筛查与下载摘要 */
+async function enrichPaperLibraryItemAbstractIfMissing(
+    state: WorkflowState,
+    index: number
+): Promise<void> {
+    const item = state.paperLibrary[index];
+    const hasAbstract = (item.abstract ?? item.abstractEn ?? "").trim().length > 0;
+    if (hasAbstract) {
+        return;
+    }
+
+    const pmid = extractPmidFromPubmedItem(item);
+    if (pmid) {
+        const abstractMap = await fetchPubMedAbstracts([pmid]);
+        const abstract = abstractMap.get(pmid)?.trim();
+        if (abstract) {
+            const now = getIsoDate(new Date());
+            state.paperLibrary[index] = {
+                ...item,
+                abstract,
+                abstractEn: abstract,
+                updatedAt: now
+            };
+            return;
+        }
+    }
+
+    const effectiveDoi = normalizeDoi(item.doi) || extractDoiFromText(item.url);
+    if (!effectiveDoi) {
+        return;
+    }
+
+    const metadata = await fetchCrossrefMetadataByDoi(effectiveDoi);
+    if (!metadata?.abstract) {
+        return;
+    }
+
+    const now = getIsoDate(new Date());
+    const updated: PaperLibraryItem = {
+        ...item,
+        abstract: metadata.abstract,
+        abstractEn: metadata.abstract,
+        updatedAt: now
+    };
+    state.paperLibrary[index] = updated;
+}
+
 export async function downloadPaperLibraryItem(
     itemId: string,
     mode: "summary" | "original" = "summary"
@@ -2829,6 +3272,10 @@ export async function downloadPaperLibraryItem(
 
     if (index === -1) {
         throw new Error("论文库条目不存在");
+    }
+
+    if (mode === "summary") {
+        await enrichPaperLibraryItemAbstractIfMissing(state, index);
     }
 
     const item = state.paperLibrary[index];

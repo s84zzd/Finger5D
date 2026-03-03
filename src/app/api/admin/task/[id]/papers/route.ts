@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 import { getAuthenticatedUsernameFromCookieHeader } from "@/lib/admin-auth";
-import { appendTaskOperationLog, getPaperLibraryCandidates, readWorkflowState, searchPapersByTheme, updateTask } from "@/lib/admin-workflow";
+import { appendTaskOperationLog, getPaperLibraryCandidates, readWorkflowState, updateTask } from "@/lib/admin-workflow";
 import type { PaperCandidate, WorkflowState } from "@/lib/admin-types";
 
 export const runtime = "nodejs";
@@ -97,19 +97,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         const libraryCandidates = getPaperLibraryCandidates(task.category, task.theme);
-        const searchedCandidates = await searchPapersByTheme(task.category, task.theme, stateBefore.searchSettings);
-        const candidates = [...libraryCandidates, ...searchedCandidates];
         const usedPaperKeys = collectSelectedPaperKeys(stateBefore, id);
         const publishedPaperKeys = collectPublishedArticleKeys();
 
         const combinedUsedKeys = new Set<string>([...usedPaperKeys, ...publishedPaperKeys]);
-        const uniqueCandidates = candidates.filter((candidate) => !combinedUsedKeys.has(getPaperUniqueKey(candidate)));
+        const uniqueCandidates = libraryCandidates.filter((candidate) => !combinedUsedKeys.has(getPaperUniqueKey(candidate)));
 
         const state = updateTask(id, (task) => ({
             ...appendTaskOperationLog(task, {
                 action: "search_papers",
                 actor,
-                detail: `检索论文：返回 ${uniqueCandidates.length} 条候选（去重前 ${candidates.length}，已过滤历史已用论文）`
+                detail: `从论文库选取：返回 ${uniqueCandidates.length} 条候选（库内匹配 ${libraryCandidates.length}，已过滤历史已用论文）`
             }),
             paperCandidates: uniqueCandidates,
             selectedPaperId: uniqueCandidates[0]?.id,

@@ -116,6 +116,10 @@ export interface PaperLibraryItem extends PaperCandidate {
     storageCategory?: string;
     adopted?: boolean;
     adoptedAt?: string;
+    /** 采纳时所在周，用于运营复盘，如 2026-W10 */
+    adoptedWeekKey?: string;
+    /** 采纳时所在月，用于运营复盘，如 2026-03 */
+    adoptedMonthKey?: string;
     localFilePath?: string;
     summaryFilePath?: string;
     originalFilePath?: string;
@@ -124,7 +128,7 @@ export interface PaperLibraryItem extends PaperCandidate {
 }
 
 export interface TaskOperationLog {
-    action: "search_papers" | "generate_draft" | "approve" | "reject" | "publish" | "export";
+    action: "search_papers" | "generate_draft" | "generate_core_summary" | "adopt_to_period" | "approve" | "reject" | "publish" | "export";
     actor: string;
     detail: string;
     createdAt: string;
@@ -145,6 +149,8 @@ export interface WorkflowTask {
     draftContent?: string;
     draftPromptTemplate?: DraftPromptTemplate;
     draftStudyTemplate?: DraftStudyTemplate;
+    /** 医学全文论文核心摘要，用于生成草稿前的内容预检（按研究类型模板生成） */
+    coreSummary?: string;
     reviewComment?: string;
     operationLogs?: TaskOperationLog[];
     createdAt: string;

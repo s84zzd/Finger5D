@@ -6,7 +6,7 @@ import {
     type DraftPromptTemplate,
     type DraftStudyTemplate
 } from "@/lib/admin-types";
-import { appendTaskOperationLog, generateDraftForTask, getTaskById, updateTask } from "@/lib/admin-workflow";
+import { appendTaskOperationLog, generateDraftForTask, getTaskById, markPaperLibraryItemAdoptedOnDraftGeneration, updateTask } from "@/lib/admin-workflow";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         const draft = await generateDraftForTask(task, { promptTemplate, studyTemplate });
 
-        const state = updateTask(id, (current) => ({
+        let state = updateTask(id, (current) => ({
             ...appendTaskOperationLog(current, {
                 action: "generate_draft",
                 actor,
@@ -45,6 +45,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             draftStudyTemplate: draft.resolvedStudyTemplate ?? studyTemplate,
             status: "drafted"
         }));
+
+        if (task.selectedPaperId) {
+            state = markPaperLibraryItemAdoptedOnDraftGeneration(state, task.selectedPaperId);
+        }
 
         return NextResponse.json(state);
     } catch (error) {

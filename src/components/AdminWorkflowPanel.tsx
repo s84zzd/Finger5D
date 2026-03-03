@@ -9,7 +9,6 @@ import {
     type DraftPromptTemplate,
     type DraftStudyTemplate,
     type MonthlyGenerationPreview,
-    type PaperCandidate,
     WEEKLY_ARTICLE_TARGET,
     WEEKS_PER_MONTH,
     WEEKLY_TASK_TARGET_MAX,
@@ -49,33 +48,6 @@ const WEEK_SLOT_PRESETS: Record<"basic" | "intensive", string[]> = {
         "Week 4：集中发布 + 全量复盘 + 下月周槽预填"
     ]
 };
-
-const PRESET_LIBRARY_KEYWORDS: Array<{ zh: string; en: string }> = [
-    { zh: "热量限制", en: "Caloric Restriction" },
-    { zh: "间歇性禁食", en: "Intermittent Fasting" },
-    { zh: "地中海饮食", en: "Mediterranean Diet" },
-    { zh: "蛋白质限制", en: "Protein Restriction" },
-    { zh: "有氧运动", en: "Aerobic Exercise" },
-    { zh: "抗阻训练", en: "Resistance Training" },
-    { zh: "睡眠优化", en: "Sleep Optimization" },
-    { zh: "压力管理", en: "Stress Management" },
-    { zh: "二甲双胍", en: "Metformin" },
-    { zh: "雷帕霉素", en: "Rapamycin" },
-    { zh: "衰老细胞清除剂", en: "Senolytics" },
-    { zh: "NAD+前体", en: "NAD+ Precursors (NMN/NR)" },
-    { zh: "亚精胺", en: "Spermidine" },
-    { zh: "白藜芦醇", en: "Resveratrol" },
-    { zh: "阿卡波糖", en: "Acarbose" },
-    { zh: "抗衰老药物", en: "Geroprotectors" },
-    { zh: "干细胞疗法", en: "Stem Cell Therapy" },
-    { zh: "基因治疗", en: "Gene Therapy" },
-    { zh: "血浆置换", en: "Plasma Exchange" },
-    { zh: "肠道菌群移植", en: "Fecal Microbiota Transplant" },
-    { zh: "外泌体", en: "Exosomes" },
-    { zh: "基因编辑", en: "Gene Editing (CRISPR)" },
-    { zh: "异种共生", en: "Parabiosis" },
-    { zh: "组织工程", en: "Tissue Engineering" }
-];
 
 function buildThemeFocusedWeekSlots(theme: string): string[] {
     const normalized = theme.trim();
@@ -182,10 +154,8 @@ export function AdminWorkflowPanel({
     const [activeCategory, setActiveCategory] = useState<FiveDCategory | "all">("all");
     const [activeExecutionStatus, setActiveExecutionStatus] = useState<ExecutionStatusFilter>("in_progress");
     const [executionOnlyPriority, setExecutionOnlyPriority] = useState(false);
-    const [executionLibraryTargetTaskId, setExecutionLibraryTargetTaskId] = useState("");
-    const [executionLibraryQuery, setExecutionLibraryQuery] = useState("");
-    const [executionRetainedDetailOpenById, setExecutionRetainedDetailOpenById] = useState<Record<string, boolean>>({});
     const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
+    const [loadingCoreSummaryTaskId, setLoadingCoreSummaryTaskId] = useState<string | null>(null);
     const [draftPromptTemplateByTaskId, setDraftPromptTemplateByTaskId] = useState<Record<string, DraftPromptTemplate>>({});
     const [draftStudyTemplateByTaskId, setDraftStudyTemplateByTaskId] = useState<Record<string, DraftStudyTemplate>>({});
     const [monthlyGenerating, setMonthlyGenerating] = useState(false);
@@ -196,6 +166,7 @@ export function AdminWorkflowPanel({
     const [templateSaving, setTemplateSaving] = useState(false);
     const [libraryThemeSeed, setLibraryThemeSeed] = useState("衰老");
     const [libraryCategory, setLibraryCategory] = useState<LibrarySearchCategory>("other");
+    const [librarySearchCustomKeywordText, setLibrarySearchCustomKeywordText] = useState("");
     const [libraryImportTitle, setLibraryImportTitle] = useState("");
     const [libraryImportDoi, setLibraryImportDoi] = useState("");
     const [libraryImportSourceUrl, setLibraryImportSourceUrl] = useState("");
@@ -213,21 +184,22 @@ export function AdminWorkflowPanel({
     } | null>(null);
     const [librarySaving, setLibrarySaving] = useState(false);
     const [libraryDownloadingId, setLibraryDownloadingId] = useState<string | null>(null);
+    const [libraryAdoptingId, setLibraryAdoptingId] = useState<string | null>(null);
+    const [libraryCoreSummaryLoadingId, setLibraryCoreSummaryLoadingId] = useState<string | null>(null);
+    const [libraryCoreSummaryContentById, setLibraryCoreSummaryContentById] = useState<Record<string, string>>({});
+    const [libraryCoreSummaryOpenId, setLibraryCoreSummaryOpenId] = useState<string | null>(null);
     const [libraryPrimaryMode, setLibraryPrimaryMode] = useState<"summary" | "original">("summary");
     const [libraryBatchTopN, setLibraryBatchTopN] = useState(5);
     const [libraryBatchOnlyUnexported, setLibraryBatchOnlyUnexported] = useState(false);
     const [libraryBatchExporting, setLibraryBatchExporting] = useState(false);
     const [librarySelectedIds, setLibrarySelectedIds] = useState<Record<string, boolean>>({});
-    const [libraryListPageSize, setLibraryListPageSize] = useState<number>(10);
+    const [libraryListPageSize, setLibraryListPageSize] = useState<number>(20);
     const [libraryListPage, setLibraryListPage] = useState<number>(1);
     const [libraryAdoptionFilter, setLibraryAdoptionFilter] = useState<LibraryAdoptionFilter>("all");
     const [libraryReviewCycleFilter, setLibraryReviewCycleFilter] = useState<LibraryReviewCycleFilter>("all");
     const [libraryCustomQuery, setLibraryCustomQuery] = useState("");
-    const [libraryKeywordFilter, setLibraryKeywordFilter] = useState<string>("all");
     const [libraryStorageFilter, setLibraryStorageFilter] = useState<LibraryStorageFilter>("all");
-    const [libraryBatchKeywordDraft, setLibraryBatchKeywordDraft] = useState("");
-    const [librarySelectedPresetKeywords, setLibrarySelectedPresetKeywords] = useState<string[]>([]);
-    const [libraryBatchKeywordApplying, setLibraryBatchKeywordApplying] = useState(false);
+    const [libraryKeywordFilter, setLibraryKeywordFilter] = useState<string>("all");
     const [libraryKeywordDraftById, setLibraryKeywordDraftById] = useState<Record<string, string>>({});
     const [libraryPreviewOpenId, setLibraryPreviewOpenId] = useState<string | null>(null);
     const [libraryPreviewLoadingId, setLibraryPreviewLoadingId] = useState<string | null>(null);
@@ -238,60 +210,10 @@ export function AdminWorkflowPanel({
     const [settingsSaving, setSettingsSaving] = useState(false);
     const [collaborationSaving, setCollaborationSaving] = useState(false);
     const [exportedTaskFiles, setExportedTaskFiles] = useState<Record<string, string>>({});
+    const [draftEditsByTaskId, setDraftEditsByTaskId] = useState<Record<string, { draftTitle: string; draftSummary: string; draftContent: string }>>({});
+    const [draftSavingTaskId, setDraftSavingTaskId] = useState<string | null>(null);
     const [activeAdminModule, setActiveAdminModule] = useState<AdminModuleKey>("home");
     const [error, setError] = useState<string>("");
-
-    function getPaperCandidateKey(paper: Pick<PaperCandidate, "doi" | "url" | "title">): string {
-        const doi = String(paper.doi ?? "").trim().toLowerCase().replace(/^https?:\/\/doi\.org\//, "");
-        if (doi) {
-            return `doi:${doi}`;
-        }
-
-        const url = String(paper.url ?? "").trim().toLowerCase();
-        if (url) {
-            return `url:${url}`;
-        }
-
-        return `title:${String(paper.title ?? "").trim().toLowerCase()}`;
-    }
-
-    async function setTaskPaperFromLibrary(task: WorkflowTask, libraryPaperId: string) {
-        if (!state?.paperLibrary) {
-            return;
-        }
-
-        const libraryItem = state.paperLibrary.find((item) => item.id === libraryPaperId);
-        if (!libraryItem) {
-            setError("未找到对应的留存论文");
-            return;
-        }
-
-        const libraryCandidate: PaperCandidate = {
-            id: libraryItem.id,
-            source: libraryItem.source,
-            title: libraryItem.title,
-            titleZh: libraryItem.titleZh,
-            authors: libraryItem.authors,
-            journal: libraryItem.journal,
-            year: libraryItem.year,
-            doi: libraryItem.doi,
-            url: libraryItem.url,
-            abstract: libraryItem.abstract,
-            abstractEn: libraryItem.abstractEn,
-            abstractZh: libraryItem.abstractZh
-        };
-
-        const existingKeys = new Set(task.paperCandidates.map((candidate) => getPaperCandidateKey(candidate)));
-        const nextPaperCandidates = existingKeys.has(getPaperCandidateKey(libraryCandidate))
-            ? task.paperCandidates
-            : [libraryCandidate, ...task.paperCandidates];
-
-        await patchTask(task.id, {
-            paperCandidates: nextPaperCandidates,
-            selectedPaperId: libraryItem.id,
-            status: "paper_selected"
-        });
-    }
 
     const currentMonthKey = useMemo(() => {
         const now = new Date();
@@ -365,17 +287,6 @@ export function AdminWorkflowPanel({
         return statusFiltered.filter((task) => Boolean(task.selectedPaperId) && priorityPaperIds.has(task.selectedPaperId as string));
     }, [state, activeCategory, activeExecutionStatus, executionOnlyPriority]);
 
-    useEffect(() => {
-        const stillVisible = visibleTasks.some((task) => task.id === executionLibraryTargetTaskId);
-        if (!stillVisible) {
-            setExecutionLibraryTargetTaskId(visibleTasks[0]?.id ?? "");
-        }
-    }, [visibleTasks, executionLibraryTargetTaskId]);
-
-    const executionLibraryTargetTask = useMemo(() => {
-        return visibleTasks.find((task) => task.id === executionLibraryTargetTaskId) ?? null;
-    }, [visibleTasks, executionLibraryTargetTaskId]);
-
     const completedAdoptedPaperIds = useMemo(() => {
         return new Set(
             (state?.tasks ?? [])
@@ -384,36 +295,6 @@ export function AdminWorkflowPanel({
                 .filter((paperId): paperId is string => Boolean(paperId))
         );
     }, [state?.tasks]);
-
-    const executionRetainedLibraryCandidates = useMemo(() => {
-        const source = state?.paperLibrary ?? [];
-        const query = executionLibraryQuery.trim().toLowerCase();
-        const selectedPaperId = executionLibraryTargetTask?.selectedPaperId;
-
-        return source
-            .filter((item) => !completedAdoptedPaperIds.has(item.id))
-            .filter((item) => item.id !== selectedPaperId)
-            .filter((item) => {
-                if (!query) {
-                    return true;
-                }
-
-                const searchableText = [
-                    item.title,
-                    item.titleZh,
-                    item.abstract,
-                    item.abstractEn,
-                    item.abstractZh,
-                    ...(item.keywords ?? [])
-                ]
-                    .map((text) => String(text ?? "").toLowerCase())
-                    .join("\n");
-
-                return searchableText.includes(query);
-            })
-            .sort((left, right) => Number(left.adopted) - Number(right.adopted))
-            .slice(0, 8);
-    }, [state?.paperLibrary, completedAdoptedPaperIds, executionLibraryQuery, executionLibraryTargetTask?.selectedPaperId]);
 
     useEffect(() => {
         if (!state?.paperLibrary) {
@@ -485,30 +366,19 @@ export function AdminWorkflowPanel({
         ).sort((left, right) => left.localeCompare(right, "zh-CN"));
     }, [state?.paperLibrary]);
 
-    const allLibraryKeywords = useMemo(() => {
+    const allLibraryKeywordOptions = useMemo(() => {
         if (!state?.paperLibrary || state.paperLibrary.length === 0) {
             return [] as string[];
         }
-
         return Array.from(
             new Set(
                 state.paperLibrary
                     .flatMap((item) => item.keywords ?? [])
-                    .map((keyword) => keyword.trim())
+                    .map((k) => String(k).trim())
                     .filter(Boolean)
             )
-        ).sort((left, right) => left.localeCompare(right, "zh-CN"));
+        ).sort((a, b) => a.localeCompare(b, "zh-CN"));
     }, [state?.paperLibrary]);
-
-    const allLibraryKeywordOptions = useMemo(() => {
-        return Array.from(new Set([
-            ...PRESET_LIBRARY_KEYWORDS.flatMap((item) => [item.zh, item.en]),
-            ...allLibraryKeywords
-        ]))
-            .map((keyword) => keyword.trim())
-            .filter(Boolean)
-            .sort((left, right) => left.localeCompare(right, "zh-CN"));
-    }, [allLibraryKeywords]);
 
     const filteredLibraryItems = useMemo(() => {
         const normalizedCustomQuery = libraryCustomQuery.trim().toLowerCase();
@@ -551,7 +421,6 @@ export function AdminWorkflowPanel({
             if (libraryKeywordFilter === "all") {
                 return true;
             }
-
             return (item.keywords ?? []).includes(libraryKeywordFilter);
         }).filter((item) => {
             if (!normalizedCustomQuery) {
@@ -942,7 +811,7 @@ export function AdminWorkflowPanel({
     async function savePapersToLibrary(mode: "reset" | "append" = "reset") {
         const normalizedTheme = libraryThemeSeed.trim();
         if (!normalizedTheme) {
-            setError("请输入论文库主题关键词");
+            setError("请输入自定义关键字");
             return;
         }
 
@@ -951,10 +820,20 @@ export function AdminWorkflowPanel({
         setLibrarySaving(true);
         try {
             setError("");
+            const keywords = librarySearchCustomKeywordText
+                .split(/[,，\s]+/)
+                .map((k) => k.trim())
+                .filter(Boolean);
+            const uniqueKeywords = Array.from(new Set(keywords)).slice(0, 20);
             const response = await fetch("/api/admin/paper-library", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ theme: normalizedTheme, category: libraryCategory, page: targetPage })
+                body: JSON.stringify({
+                    theme: normalizedTheme,
+                    category: libraryCategory,
+                    page: targetPage,
+                    keywords: uniqueKeywords.length > 0 ? uniqueKeywords : undefined
+                })
             });
 
             if (!response.ok) {
@@ -1003,6 +882,11 @@ export function AdminWorkflowPanel({
         setLibraryImporting(true);
         try {
             setError("");
+            const importKeywords = librarySearchCustomKeywordText
+                .split(/[,，\s]+/)
+                .map((k) => k.trim())
+                .filter(Boolean);
+            const importKeywordsUnique = Array.from(new Set(importKeywords)).slice(0, 20);
             const response = await fetch("/api/admin/paper-library/import", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1012,7 +896,8 @@ export function AdminWorkflowPanel({
                     sourceUrl: libraryImportSourceUrl,
                     pdfUrl: libraryImportPdfUrl,
                     category: libraryCategory === "other" ? "cardio" : libraryCategory,
-                    themeSeed: libraryThemeSeed
+                    themeSeed: libraryThemeSeed,
+                    keywords: importKeywordsUnique.length > 0 ? importKeywordsUnique : undefined
                 })
             });
 
@@ -1061,6 +946,12 @@ export function AdminWorkflowPanel({
         let reusedCount = 0;
         let failedCount = 0;
 
+        const bulkKeywords = librarySearchCustomKeywordText
+            .split(/[,，\s]+/)
+            .map((k) => k.trim())
+            .filter(Boolean);
+        const bulkKeywordsUnique = Array.from(new Set(bulkKeywords)).slice(0, 20);
+
         for (const sourceUrl of urlList) {
             try {
                 const response = await fetch("/api/admin/paper-library/import", {
@@ -1069,7 +960,8 @@ export function AdminWorkflowPanel({
                     body: JSON.stringify({
                         sourceUrl,
                         category: libraryCategory === "other" ? "cardio" : libraryCategory,
-                        themeSeed: libraryThemeSeed
+                        themeSeed: libraryThemeSeed,
+                        keywords: bulkKeywordsUnique.length > 0 ? bulkKeywordsUnique : undefined
                     })
                 });
 
@@ -1135,6 +1027,44 @@ export function AdminWorkflowPanel({
             return false;
         } finally {
             setLibraryDownloadingId(null);
+        }
+    }
+
+    async function adoptLibraryItemToCurrentPeriod(itemId: string) {
+        setLibraryAdoptingId(itemId);
+        try {
+            setError("");
+            const response = await fetch(`/api/admin/paper-library/${itemId}/adopt-to-current-period`, { method: "POST" });
+            const payload = await response.json() as WorkflowState & { adopted?: boolean; message?: string; taskId?: string };
+            setState(payload);
+            if (payload.adopted === false && payload.message) {
+                setError(payload.message);
+            } else if (payload.adopted) {
+                setActiveAdminModule("execution");
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "入选当期失败");
+        } finally {
+            setLibraryAdoptingId(null);
+        }
+    }
+
+    async function generateLibraryItemCoreSummary(itemId: string) {
+        setLibraryCoreSummaryLoadingId(itemId);
+        try {
+            setError("");
+            const response = await fetch(`/api/admin/paper-library/${itemId}/generate-core-summary`, { method: "POST" });
+            if (!response.ok) {
+                const payload = await response.json() as { message?: string };
+                throw new Error(payload.message ?? "预检生成失败");
+            }
+            const payload = await response.json() as { content: string };
+            setLibraryCoreSummaryContentById((prev) => ({ ...prev, [itemId]: payload.content }));
+            setLibraryCoreSummaryOpenId(itemId);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "预检生成失败");
+        } finally {
+            setLibraryCoreSummaryLoadingId(null);
         }
     }
 
@@ -1469,85 +1399,6 @@ export function AdminWorkflowPanel({
         await patchLibraryKeywords(itemId, nextKeywords);
     }
 
-    async function addBatchKeywordToFilteredList() {
-        const keyword = libraryBatchKeywordDraft.trim();
-        if (!keyword) {
-            setError("请输入要批量添加的关键词");
-            return;
-        }
-
-        if (filteredLibraryItems.length === 0) {
-            setError("当前筛选结果为空，无法批量添加关键词");
-            return;
-        }
-
-        const confirmed = window.confirm(`确认将关键词「${keyword}」批量添加到当前筛选结果（共 ${filteredLibraryItems.length} 篇）吗？`);
-        if (!confirmed) {
-            return;
-        }
-
-        setLibraryBatchKeywordApplying(true);
-        setError("");
-
-        let successCount = 0;
-        for (const item of filteredLibraryItems) {
-            const nextKeywords = Array.from(new Set([...(item.keywords ?? []), keyword]));
-            const ok = await patchLibraryKeywords(item.id, nextKeywords);
-            if (ok) {
-                successCount += 1;
-            }
-        }
-
-        setLibraryBatchKeywordApplying(false);
-
-        if (successCount < filteredLibraryItems.length) {
-            setError(`批量关键词添加完成：成功 ${successCount} 篇，失败 ${filteredLibraryItems.length - successCount} 篇。`);
-            return;
-        }
-
-        setLibraryBatchKeywordDraft("");
-        window.alert(`批量关键词添加完成：成功 ${successCount} 篇。`);
-    }
-
-    async function addSelectedPresetKeywordsToFilteredList() {
-        if (librarySelectedPresetKeywords.length === 0) {
-            setError("请先选择至少一个预设关键词");
-            return;
-        }
-
-        if (filteredLibraryItems.length === 0) {
-            setError("当前筛选结果为空，无法批量添加关键词");
-            return;
-        }
-
-        const confirmed = window.confirm(`确认将 ${librarySelectedPresetKeywords.length} 个预设关键词批量添加到当前筛选结果（共 ${filteredLibraryItems.length} 篇）吗？`);
-        if (!confirmed) {
-            return;
-        }
-
-        setLibraryBatchKeywordApplying(true);
-        setError("");
-
-        let successCount = 0;
-        for (const item of filteredLibraryItems) {
-            const nextKeywords = Array.from(new Set([...(item.keywords ?? []), ...librarySelectedPresetKeywords]));
-            const ok = await patchLibraryKeywords(item.id, nextKeywords);
-            if (ok) {
-                successCount += 1;
-            }
-        }
-
-        setLibraryBatchKeywordApplying(false);
-
-        if (successCount < filteredLibraryItems.length) {
-            setError(`预设关键词批量添加完成：成功 ${successCount} 篇，失败 ${filteredLibraryItems.length - successCount} 篇。`);
-            return;
-        }
-
-        setLibrarySelectedPresetKeywords([]);
-        window.alert(`预设关键词批量添加完成：成功 ${successCount} 篇。`);
-    }
-
     async function createWeeklyReviewEntry() {
         try {
             setError("");
@@ -1632,6 +1483,24 @@ export function AdminWorkflowPanel({
         }
     }
 
+    async function callGenerateCoreSummary(taskId: string) {
+        setLoadingCoreSummaryTaskId(taskId);
+        try {
+            setError("");
+            const response = await fetch(`/api/admin/task/${taskId}/generate-core-summary`, { method: "POST" });
+            if (!response.ok) {
+                const payload = await response.json() as { message?: string };
+                throw new Error(payload.message ?? "生成核心内容失败");
+            }
+            const payload = await response.json() as WorkflowState;
+            setState(payload);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "生成核心内容失败");
+        } finally {
+            setLoadingCoreSummaryTaskId(null);
+        }
+    }
+
     async function logout() {
         try {
             await fetch("/api/admin/auth/logout", { method: "POST" });
@@ -1701,7 +1570,7 @@ export function AdminWorkflowPanel({
                         <CheckCircle2 className="h-4 w-4" />
                         环境变量检查通过
                     </p>
-                    <p className="mt-1 text-sm">后台登录与模型生成配置完整，可直接执行“检索论文 → 生成草稿 → 审核发布”流程。</p>
+                    <p className="mt-1 text-sm">后台登录与模型生成配置完整，可直接执行“从论文库选取论文 → 生成草稿 → 审核发布”流程。</p>
                 </div>
             )}
 
@@ -2363,76 +2232,86 @@ export function AdminWorkflowPanel({
                     </label>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-sm font-semibold text-slate-800">关键词预设表（设置维护）</p>
-                    <p className="mt-1 text-xs text-slate-500">预设用于论文库模块快速选择；关键词仍支持自由输入。</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                        {PRESET_LIBRARY_KEYWORDS.map((keyword) => (
-                            <span
-                                key={`settings-preset-keyword-${keyword.zh}`}
-                                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
-                            >
-                                {keyword.zh} / {keyword.en}
-                            </span>
-                        ))}
-                    </div>
-                </div>
                 </div>
             )}
 
             {activeAdminModule === "library" && (
-                <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
-                <h2 className="text-sm font-semibold text-slate-900">论文库（预检索与复用）</h2>
-                <p className="mt-1 text-xs text-slate-500">可按主题提前检索并入库，后续任务检索会优先调用库内论文；同一论文不会重复引用。</p>
-                <p className="mt-1 text-xs text-slate-500">单次检索默认 20 篇，可先筛查删除不需要条目，再继续检索追加；入库时会按 DOI/URL/标题自动去重。</p>
+                <div className="mb-6 space-y-6">
+                <p className="text-xs text-slate-500">论文库：从外部论文库（如 PubMed）检索或通过 URL/DOI/全文导入入库，在库内浏览筛选后确认采纳进入执行模块。仅已下载全文的论文可入选当期。</p>
 
-                <div className="mt-3 flex flex-wrap items-end gap-3">
-                    <label className="text-sm text-slate-700">
-                        主题关键词
-                        <input
-                            type="text"
-                            value={libraryThemeSeed}
-                            onChange={(event) => setLibraryThemeSeed(event.target.value)}
-                            placeholder="例如：睡眠与衰老"
-                            className="mt-1 w-64 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
-                        />
-                    </label>
-
-                    <label className="text-sm text-slate-700">
-                        维度
-                        <select
-                            value={libraryCategory}
-                            onChange={(event) => setLibraryCategory(event.target.value as LibrarySearchCategory)}
-                            className="mt-1 w-44 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+                {/* 一、外部检索入库：每批 20 篇，可筛选后再追加 */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">一、外部检索入库</h2>
+                    <p className="mt-1 text-xs text-slate-500">从 PubMed、Crossref 等外部论文库按自定义关键字检索，每批 20 篇列队；可先筛选删除不需要的条目，再「继续检索追加」下一批 20 篇。按 DOI/URL/标题自动去重。</p>
+                    <p className="mt-0.5 text-xs text-slate-600">当前检索来源：{(state?.searchSettings.sourceWhitelist ?? ["crossref", "pubmed"]).join("、")}（在「设置」中可勾选/取消来源）</p>
+                    <p className="mt-0.5 text-xs text-slate-500">入库前请选择大类（6 类）并填写关键字（可选），便于入库后留用。</p>
+                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                        <label className="text-sm text-slate-700">
+                            自定义关键字
+                            <input
+                                type="text"
+                                value={libraryThemeSeed}
+                                onChange={(event) => setLibraryThemeSeed(event.target.value)}
+                                placeholder="如：睡眠 昼夜节律"
+                                className="mt-1 w-64 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+                            />
+                        </label>
+                        <label className="text-sm text-slate-700">
+                            大类（入库分类）
+                            <select
+                                value={libraryCategory}
+                                onChange={(event) => setLibraryCategory(event.target.value as LibrarySearchCategory)}
+                                className="mt-1 w-44 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+                            >
+                                {Object.entries(CATEGORY_LABEL).map(([key, label]) => (
+                                    <option key={key} value={key}>{label}</option>
+                                ))}
+                                <option value="other">其他（不限范围）</option>
+                            </select>
+                        </label>
+                        <label className="text-sm text-slate-700">
+                            关键字（可选，逗号/空格分隔）
+                            <input
+                                type="text"
+                                value={librarySearchCustomKeywordText}
+                                onChange={(event) => setLibrarySearchCustomKeywordText(event.target.value)}
+                                placeholder="例如：睡眠、昼夜节律"
+                                className="mt-1 w-56 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            onClick={() => void savePapersToLibrary("reset")}
+                            disabled={librarySaving || libraryBatchExporting}
+                            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
                         >
-                            {Object.entries(CATEGORY_LABEL).map(([key, label]) => (
-                                <option key={key} value={key}>{label}</option>
-                            ))}
-                            <option value="other">其他（不限范围）</option>
-                        </select>
-                    </label>
-
-                    <button
-                        type="button"
-                        onClick={() => void savePapersToLibrary("reset")}
-                        disabled={librarySaving || libraryBatchExporting}
-                        className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
-                    >
-                        {librarySaving ? "入库中..." : "检索并入库"}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => void savePapersToLibrary("append")}
-                        disabled={librarySaving || libraryBatchExporting}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                    >
-                        {librarySaving ? "追加中..." : `继续检索追加（下一页：${librarySearchPage + 1}）`}
-                    </button>
+                            {librarySaving ? "入库中..." : "检索并入库（每批 20 篇）"}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => void savePapersToLibrary("append")}
+                            disabled={librarySaving || libraryBatchExporting}
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                        >
+                            {librarySaving ? "追加中..." : `继续检索追加（第 ${librarySearchPage + 1} 批，每批 20 篇）`}
+                        </button>
+                    </div>
+                    {libraryLastSearchStats && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="rounded bg-slate-100 px-2 py-1 text-slate-700">本轮页码：{libraryLastSearchStats.page}</span>
+                            <span className="rounded bg-blue-100 px-2 py-1 text-blue-700">命中：{libraryLastSearchStats.matched}</span>
+                            <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">新增：{libraryLastSearchStats.added}</span>
+                            <span className="rounded bg-amber-100 px-2 py-1 text-amber-700">复用：{libraryLastSearchStats.reused}</span>
+                            <span className="rounded bg-rose-100 px-2 py-1 text-rose-700">删除：{libraryLastSearchStats.deleted}</span>
+                        </div>
+                    )}
                 </div>
 
-                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-sm font-semibold text-slate-800">外部管道导入（PDF 优先）</p>
-                    <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                {/* 二、导入入库：URL/DOI/全文直链或批量网址 */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">二、导入入库</h2>
+                    <p className="mt-1 text-xs text-slate-500">已下载的全文或通过 URL/DOI 自动拉取元数据；提供 PDF 直链时可直接全文落库。支持批量网址导入（每行一个）。入库大类与关键字使用上方「一、外部检索入库」中的设置。</p>
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
                         <input
                             type="text"
                             value={libraryImportTitle}
@@ -2458,7 +2337,7 @@ export function AdminWorkflowPanel({
                             type="text"
                             value={libraryImportPdfUrl}
                             onChange={(event) => setLibraryImportPdfUrl(event.target.value)}
-                            placeholder="PDF 直链（可选，优先用于全文落库）"
+                            placeholder="PDF 直链（可选，优先全文落库）"
                             className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
                         />
                     </div>
@@ -2469,13 +2348,12 @@ export function AdminWorkflowPanel({
                             disabled={libraryImporting || libraryBulkImporting || librarySaving || libraryBatchExporting}
                             className="rounded border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
                         >
-                            {libraryImporting ? "导入中..." : "导入到论文留存库"}
+                            {libraryImporting ? "导入中..." : "导入到论文库"}
                         </button>
-                        <span className="text-xs text-slate-500">支持仅标题反查来源；有 PDF 直链时会直接落库原文。</span>
+                        <span className="text-xs text-slate-500">仅标题也可反查；有 PDF 直链时直接落库原文。</span>
                     </div>
-
-                    <div className="mt-3 rounded border border-slate-200 bg-white p-3">
-                        <p className="text-xs font-semibold text-slate-700">批量网址导入（高频筛选场景）</p>
+                    <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs font-semibold text-slate-700">批量网址导入</p>
                         <textarea
                             aria-label="批量网址导入"
                             value={libraryBulkImportUrls}
@@ -2493,22 +2371,15 @@ export function AdminWorkflowPanel({
                             >
                                 {libraryBulkImporting ? "批量导入中..." : "批量网址导入"}
                             </button>
-                            <span className="text-xs text-slate-500">从论文来源库筛选后，可直接粘贴网址批量入库。</span>
                         </div>
                     </div>
                 </div>
 
-                {libraryLastSearchStats && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="rounded bg-slate-100 px-2 py-1 text-slate-700">本轮页码：{libraryLastSearchStats.page}</span>
-                        <span className="rounded bg-blue-100 px-2 py-1 text-blue-700">命中：{libraryLastSearchStats.matched}</span>
-                        <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">新增：{libraryLastSearchStats.added}</span>
-                        <span className="rounded bg-amber-100 px-2 py-1 text-amber-700">复用：{libraryLastSearchStats.reused}</span>
-                        <span className="rounded bg-rose-100 px-2 py-1 text-rose-700">删除：{libraryLastSearchStats.deleted}</span>
-                    </div>
-                )}
-
-                <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                {/* 三、浏览入库论文：每页 20 篇，筛选后确认采纳 */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <h2 className="text-sm font-semibold text-slate-900">三、浏览入库论文</h2>
+                    <p className="mt-1 text-xs text-slate-500">在已入库论文中按分类、关键字或自定义关键字查找；每页 20 篇。确认采纳后进入执行模块当期。可先「下载摘要」再「下载全文」；仅已下载全文的论文可「确认入选当期」。</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                     <label className="inline-flex items-center gap-2 text-slate-700">
                         <input
                             type="checkbox"
@@ -2591,6 +2462,11 @@ export function AdminWorkflowPanel({
                     <span className="text-slate-600">已选 {selectedLibraryCount} 篇</span>
                 </div>
 
+                <h3 className="mt-4 text-sm font-semibold text-slate-800">浏览入库论文</h3>
+                <p className="mt-1 text-xs text-slate-600">
+                    在已入库论文中按分类、关键字或自定义关键字查找；确认采纳后进入执行模块当期。
+                </p>
+
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-slate-600">使用状态筛选：</span>
                     <button
@@ -2651,73 +2527,6 @@ export function AdminWorkflowPanel({
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-slate-600">关键词筛选：</span>
-                    <select
-                        aria-label="论文库关键词筛选"
-                        value={libraryKeywordFilter}
-                        onChange={(event) => setLibraryKeywordFilter(event.target.value)}
-                        className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 outline-none focus:border-blue-500"
-                    >
-                        <option value="all">全部关键词</option>
-                        {allLibraryKeywordOptions.map((keyword) => (
-                            <option key={keyword} value={keyword}>{keyword}</option>
-                        ))}
-                    </select>
-                    <input
-                        type="text"
-                        value={libraryBatchKeywordDraft}
-                        onChange={(event) => setLibraryBatchKeywordDraft(event.target.value)}
-                        list="library-keyword-options"
-                        placeholder="批量添加关键词，如：睡眠"
-                        className="w-44 rounded border border-slate-300 px-2 py-1 text-slate-700 outline-none focus:border-blue-500"
-                        disabled={libraryBatchKeywordApplying}
-                    />
-                    <button
-                        type="button"
-                        onClick={() => void addBatchKeywordToFilteredList()}
-                        disabled={libraryBatchKeywordApplying || filteredLibraryItems.length === 0}
-                        className="rounded border border-slate-300 bg-white px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                    >
-                        {libraryBatchKeywordApplying ? "批量添加中..." : "批量给当前筛选结果加关键词"}
-                    </button>
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-slate-600">预设关键词（可多选）：</span>
-                    <select
-                        aria-label="论文库预设关键词多选"
-                        multiple
-                        value={librarySelectedPresetKeywords}
-                        onChange={(event) => {
-                            const values = Array.from(event.target.selectedOptions).map((option) => option.value);
-                            setLibrarySelectedPresetKeywords(values);
-                        }}
-                        className="h-24 w-64 rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 outline-none focus:border-blue-500"
-                        disabled={libraryBatchKeywordApplying}
-                    >
-                        {PRESET_LIBRARY_KEYWORDS.map((keyword) => (
-                            <option key={`preset-keyword-${keyword.zh}`} value={keyword.zh}>
-                                {keyword.zh} / {keyword.en}
-                            </option>
-                        ))}
-                    </select>
-                    <button
-                        type="button"
-                        onClick={() => void addSelectedPresetKeywordsToFilteredList()}
-                        disabled={libraryBatchKeywordApplying || filteredLibraryItems.length === 0}
-                        className="rounded border border-slate-300 bg-white px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                    >
-                        批量应用所选预设
-                    </button>
-                </div>
-
-                <datalist id="library-keyword-options">
-                    {allLibraryKeywordOptions.map((keyword) => (
-                        <option key={`keyword-option-${keyword}`} value={keyword} />
-                    ))}
-                </datalist>
-
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-slate-600">入库分类筛选：</span>
                     <select
                         aria-label="论文库入库分类筛选"
@@ -2729,6 +2538,21 @@ export function AdminWorkflowPanel({
                         <option value="uncategorized">未分类</option>
                         {allLibraryStorageCategories.map((category) => (
                             <option key={category} value={category}>{category}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-600">关键字筛选：</span>
+                    <select
+                        aria-label="论文库关键字筛选"
+                        value={libraryKeywordFilter}
+                        onChange={(event) => setLibraryKeywordFilter(event.target.value)}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 outline-none focus:border-blue-500"
+                    >
+                        <option value="all">全部关键字</option>
+                        {allLibraryKeywordOptions.map((kw) => (
+                            <option key={kw} value={kw}>{kw}</option>
                         ))}
                     </select>
                 </div>
@@ -2775,14 +2599,21 @@ export function AdminWorkflowPanel({
                                 return (
                             <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                                 {isCompleted && (
-                                    <div className="mb-2">
+                                    <div className="mb-2 flex flex-wrap items-center gap-2">
                                         <button
                                             type="button"
                                             disabled
                                             className="rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700"
                                         >
-                                            已采纳使用（已进入草稿/发布流程）
+                                            已采纳使用（已进入草稿/发布流程，永久存库）
                                         </button>
+                                        {(item.adoptedAt ?? item.adoptedWeekKey ?? item.adoptedMonthKey) && (
+                                            <span className="text-xs text-slate-500" title="运营复盘用">
+                                                采纳：{item.adoptedAt ? new Date(item.adoptedAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" }) : ""}
+                                                {item.adoptedWeekKey ? ` · ${item.adoptedWeekKey}` : ""}
+                                                {item.adoptedMonthKey ? ` · ${item.adoptedMonthKey}` : ""}
+                                            </span>
+                                        )}
                                     </div>
                                 )}
                                 {isFutureUse && (
@@ -2901,7 +2732,7 @@ export function AdminWorkflowPanel({
                                                 ? "bg-blue-100 text-blue-700"
                                                 : "border border-blue-300 bg-white text-blue-700 hover:bg-blue-50"}`}
                                     >
-                                        {isCompleted ? "已采纳使用" : (item.adopted ? "设为后续使用" : "设为本期优先")}
+                                        {isCompleted ? "已采纳使用（入选执行）" : (item.adopted ? "留用（仅存库）" : "设为本期优先（当期采纳）")}
                                     </button>
                                     <button
                                         type="button"
@@ -2983,8 +2814,28 @@ export function AdminWorkflowPanel({
                                     >
                                         {libraryDownloadingId === `${item.id}:original`
                                             ? "下载中..."
-                                            : (String(item.abstractZh ?? item.abstractEn ?? item.abstract ?? "").trim() ? "摘要通过后下载全文" : "无摘要也可尝试下载全文")}
+                                            : (String(item.abstractZh ?? item.abstractEn ?? item.abstract ?? "").trim() ? "下载全文（入库存放）" : "无摘要也可尝试下载全文（入库存放）")}
                                     </button>
+                                    {item.originalFilePath && !isCompleted && (
+                                        <button
+                                            type="button"
+                                            onClick={() => void adoptLibraryItemToCurrentPeriod(item.id)}
+                                            disabled={libraryBatchExporting || libraryAdoptingId === item.id}
+                                            className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                                        >
+                                            {libraryAdoptingId === item.id ? "入选中…" : "确认入选当期"}
+                                        </button>
+                                    )}
+                                    {item.originalFilePath && (
+                                        <button
+                                            type="button"
+                                            onClick={() => (libraryCoreSummaryOpenId === item.id ? setLibraryCoreSummaryOpenId(null) : void generateLibraryItemCoreSummary(item.id))}
+                                            disabled={libraryCoreSummaryLoadingId === item.id}
+                                            className="rounded border border-violet-300 bg-violet-50 px-2 py-1 font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-60"
+                                        >
+                                            {libraryCoreSummaryLoadingId === item.id ? "预检生成中…" : (libraryCoreSummaryOpenId === item.id ? "收起预检" : "预检")}
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={() => void openLibrarySummaryPreview(item.id)}
@@ -3000,6 +2851,14 @@ export function AdminWorkflowPanel({
                                     )}
                                     {item.originalFilePath && <span className="text-emerald-700">原文：{item.originalFilePath}</span>}
                                 </div>
+                                {libraryCoreSummaryOpenId === item.id && libraryCoreSummaryContentById[item.id] && (
+                                    <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+                                        <p className="text-xs font-semibold text-slate-900">核心内容摘要（预检）</p>
+                                        <div className="mt-2 max-h-80 overflow-auto rounded border border-slate-200 bg-white p-3 text-xs text-slate-700 whitespace-pre-wrap">
+                                            {libraryCoreSummaryContentById[item.id]}
+                                        </div>
+                                    </div>
+                                )}
                                 {libraryPreviewOpenId === item.id && libraryPreviewTextById[item.id] && (
                                     <div
                                         ref={(element) => {
@@ -3022,10 +2881,24 @@ export function AdminWorkflowPanel({
                     <p className="mt-4 text-sm text-slate-500">当前筛选条件下暂无论文。</p>
                 )}
                 </div>
+                </div>
             )}
 
             {activeAdminModule === "execution" && (
                 <>
+                    <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-sm text-slate-700">
+                            当期入选的论文直接在下方案务卡片中显示。本期不足时，可
+                            <button
+                                type="button"
+                                onClick={() => setActiveAdminModule("library")}
+                                className="mx-1 font-semibold text-blue-600 underline hover:text-blue-700"
+                            >
+                                前往论文库检索
+                            </button>
+                            入库后再回到本模块选取。
+                        </p>
+                    </div>
                     <div className="mb-6 flex flex-wrap gap-2">
                         <button
                             onClick={() => setActiveExecutionStatus("all")}
@@ -3079,109 +2952,11 @@ export function AdminWorkflowPanel({
                 ))}
                     </div>
 
-                    <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="text-sm font-semibold text-slate-900">检索留存论文库（执行模块统一入口）</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <select
-                                aria-label="执行模块目标任务"
-                                value={executionLibraryTargetTaskId}
-                                onChange={(event) => setExecutionLibraryTargetTaskId(event.target.value)}
-                                className="w-64 rounded border border-slate-300 px-2 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                            >
-                                {visibleTasks.map((task) => (
-                                    <option key={`execution-target-${task.id}`} value={task.id}>
-                                        {CATEGORY_LABEL[task.category]} · 第{task.sequence}篇 · {task.theme}
-                                    </option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                value={executionLibraryQuery}
-                                onChange={(event) => setExecutionLibraryQuery(event.target.value)}
-                                placeholder="按标题/摘要/关键词检索留存论文"
-                                className="w-80 rounded border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                                disabled={!executionLibraryTargetTask}
-                            />
-                            <span className="text-xs text-slate-500">展示前 {executionRetainedLibraryCandidates.length} 篇</span>
-                        </div>
-
-                        {executionLibraryTargetTask ? (
-                            executionRetainedLibraryCandidates.length > 0 ? (
-                                <div className="mt-3 space-y-2">
-                                    {executionRetainedLibraryCandidates.map((paper) => {
-                                        const detailKey = `${executionLibraryTargetTask.id}:${paper.id}`;
-                                        const detailOpen = Boolean(executionRetainedDetailOpenById[detailKey]);
-                                        const disabled = loadingTaskId === executionLibraryTargetTask.id;
-                                        return (
-                                            <div key={`execution-retained-${paper.id}`} className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="truncate text-sm text-slate-800">{paper.titleZh ?? paper.title}</p>
-                                                        <p className="text-xs text-slate-500">{paper.source} · {paper.year}</p>
-                                                    </div>
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <a
-                                                            href={paper.url}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                                        >
-                                                            查看来源
-                                                        </a>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setExecutionRetainedDetailOpenById((prev) => ({
-                                                                    ...prev,
-                                                                    [detailKey]: !prev[detailKey]
-                                                                }));
-                                                            }}
-                                                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                                        >
-                                                            {detailOpen ? "收起浏览" : "浏览摘要"}
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            disabled={disabled || libraryBatchExporting}
-                                                            onClick={() => void setTaskPaperFromLibrary(executionLibraryTargetTask, paper.id)}
-                                                            className="rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-                                                        >
-                                                            设为本期使用
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            disabled={disabled || libraryBatchExporting || completedAdoptedPaperIds.has(paper.id)}
-                                                            onClick={() => void removeLibraryItem(paper.id)}
-                                                            title={completedAdoptedPaperIds.has(paper.id) ? "已采纳归档论文需永久保存，不可删除" : undefined}
-                                                            className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                                                        >
-                                                            删除
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                {detailOpen && (
-                                                    <div className="mt-2 rounded border border-slate-200 bg-white px-2 py-2 text-xs text-slate-600">
-                                                        <p>摘要速览：{(paper.abstractZh ?? paper.abstractEn ?? paper.abstract ?? "暂无摘要").slice(0, 220)}</p>
-                                                        {(paper.keywords ?? []).length > 0 && (
-                                                            <p className="mt-1">关键词：{(paper.keywords ?? []).join("、")}</p>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <p className="mt-3 text-xs text-slate-500">当前条件下无可调整的留存论文。</p>
-                            )
-                        ) : (
-                            <p className="mt-3 text-xs text-slate-500">当前筛选下暂无可选任务。</p>
-                        )}
-                    </div>
-
                     <div className="space-y-6">
                 {visibleTasks.map((task) => {
                     const selectedPaper = task.paperCandidates.find((paper) => paper.id === task.selectedPaperId);
+                    const libItemForSelected = selectedPaper ? state?.paperLibrary?.find((p) => p.id === selectedPaper.id) : undefined;
+                    const selectedPaperNoFullText = !!selectedPaper && !!libItemForSelected && !libItemForSelected.originalFilePath;
                     const disabled = loadingTaskId === task.id;
                     const exportedFilename = exportedTaskFiles[task.id];
                     const recentOperationLogs = [...(task.operationLogs ?? [])].slice(-5).reverse();
@@ -3238,11 +3013,20 @@ export function AdminWorkflowPanel({
                                     onClick={() => void callTaskAction(task.id, "papers")}
                                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
                                 >
-                                    1) 检索论文
+                                    1) 从论文库选取
                                 </button>
                                 <button
-                                    disabled={disabled || !task.selectedPaperId}
+                                    disabled={disabled || !task.selectedPaperId || selectedPaperNoFullText || loadingCoreSummaryTaskId === task.id}
+                                    onClick={() => void callGenerateCoreSummary(task.id)}
+                                    title={selectedPaperNoFullText ? "请先下载全文后再生成" : undefined}
+                                    className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                                >
+                                    {loadingCoreSummaryTaskId === task.id ? "生成中…" : "核心内容"}
+                                </button>
+                                <button
+                                    disabled={disabled || !task.selectedPaperId || selectedPaperNoFullText}
                                     onClick={() => void callTaskAction(task.id, "generate")}
+                                    title={selectedPaperNoFullText ? "请先下载全文后再生成草稿" : undefined}
                                     className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
                                 >
                                     2) 生成草稿
@@ -3276,16 +3060,52 @@ export function AdminWorkflowPanel({
                                     导出草稿（不发布）
                                 </button>
                             </div>
+                            {selectedPaper && (
+                                <p className="mt-2 text-xs text-slate-500">
+                                    建议先点击「核心内容」核对论文关键信息与证据等级，再点击「2) 生成草稿」。
+                                </p>
+                            )}
 
                             <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
                                 <div className="text-sm text-slate-700">
                                     <p className="font-medium text-slate-800">执行论文（仅显示当前）</p>
                                     <p className="mt-1 text-xs text-slate-500">
-                                        当前候选池 {task.paperCandidates.length} 篇；为避免干扰，其他候选论文在执行模块中不展开列表。
+                                        排列的论文标题（本期执行）；当前候选池（论文库）{task.paperCandidates.length} 篇。
                                     </p>
-                                    <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
-                                        {selectedPaper ? (selectedPaper.titleZh ?? selectedPaper.title) : "尚未选择论文，请先点击“1) 检索论文”"}
+                                    <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 font-medium">
+                                        {selectedPaper ? (selectedPaper.titleZh ?? selectedPaper.title) : "尚未选择论文，请先点击「1) 从论文库选取」"}
                                     </p>
+                                    {selectedPaper && (
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            原文标题：{selectedPaper.title}
+                                        </p>
+                                    )}
+                                    {selectedPaper && (
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            {state?.paperLibrary?.some((p) => p.id === selectedPaper.id) ? (
+                                                <button
+                                                    type="button"
+                                                    disabled={disabled || libraryBatchExporting || Boolean(libraryDownloadingId)}
+                                                    onClick={() => void downloadLibraryPaper(selectedPaper.id, "summary")}
+                                                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                                >
+                                                    {libraryDownloadingId === `${selectedPaper.id}:summary` ? "下载中…" : "下载选中论文摘要"}
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs text-amber-700">
+                                                    当前选中论文来自检索未入库，仅论文库中的论文可下载摘要；请先在
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveAdminModule("library")}
+                                                        className="mx-0.5 font-semibold text-amber-800 underline hover:text-amber-900"
+                                                    >
+                                                        论文库
+                                                    </button>
+                                                    模块预检索入库后再下载。
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="mt-3">
                                         <label className="text-xs text-slate-500">草稿生成模板</label>
                                         <select
@@ -3359,15 +3179,91 @@ export function AdminWorkflowPanel({
                                 </div>
                             )}
 
+                            {task.coreSummary && (
+                                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">核心内容摘要</p>
+                                    <p className="mt-1 text-xs text-slate-500">为生成草稿提供的内容预检：按研究类型模板生成的结构化摘要，用于核对关键信息与证据等级后再生成草稿。</p>
+                                    <div className="mt-3 max-h-96 overflow-auto rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 whitespace-pre-wrap">
+                                        {task.coreSummary}
+                                    </div>
+                                </div>
+                            )}
+
                             {task.draftContent && (
-                                <div className="mt-4">
-                                    <p className="mb-2 text-sm font-semibold text-slate-900">AI 草稿预览（可复制到编辑器人工调整）</p>
-                                    <textarea
-                                        aria-label="AI 草稿预览"
-                                        readOnly
-                                        value={task.draftContent}
-                                        className="h-56 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm leading-6 text-slate-700"
-                                    />
+                                <div className="mt-4 space-y-3">
+                                    <p className="text-sm font-semibold text-slate-900">修改草稿（审议修订后再审核通过/驳回）</p>
+                                    <label className="block text-xs text-slate-600">
+                                        草稿标题
+                                        <input
+                                            value={draftEditsByTaskId[task.id]?.draftTitle ?? task.draftTitle ?? ""}
+                                            onChange={(e) => setDraftEditsByTaskId((prev) => ({
+                                                ...prev,
+                                                [task.id]: {
+                                                    draftTitle: e.target.value,
+                                                    draftSummary: prev[task.id]?.draftSummary ?? task.draftSummary ?? "",
+                                                    draftContent: prev[task.id]?.draftContent ?? task.draftContent ?? ""
+                                                }
+                                            }))}
+                                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                                        />
+                                    </label>
+                                    <label className="block text-xs text-slate-600">
+                                        草稿摘要
+                                        <input
+                                            value={draftEditsByTaskId[task.id]?.draftSummary ?? task.draftSummary ?? ""}
+                                            onChange={(e) => setDraftEditsByTaskId((prev) => ({
+                                                ...prev,
+                                                [task.id]: {
+                                                    draftTitle: prev[task.id]?.draftTitle ?? task.draftTitle ?? "",
+                                                    draftSummary: e.target.value,
+                                                    draftContent: prev[task.id]?.draftContent ?? task.draftContent ?? ""
+                                                }
+                                            }))}
+                                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                                        />
+                                    </label>
+                                    <label className="block text-xs text-slate-600">
+                                        草稿正文（MDX）
+                                        <textarea
+                                            aria-label="草稿正文"
+                                            value={draftEditsByTaskId[task.id]?.draftContent ?? task.draftContent ?? ""}
+                                            onChange={(e) => setDraftEditsByTaskId((prev) => ({
+                                                ...prev,
+                                                [task.id]: {
+                                                    draftTitle: prev[task.id]?.draftTitle ?? task.draftTitle ?? "",
+                                                    draftSummary: prev[task.id]?.draftSummary ?? task.draftSummary ?? "",
+                                                    draftContent: e.target.value
+                                                }
+                                            }))}
+                                            className="mt-1 h-56 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm leading-6 text-slate-700 outline-none focus:border-blue-500"
+                                        />
+                                    </label>
+                                    <button
+                                        type="button"
+                                        disabled={disabled || draftSavingTaskId === task.id}
+                                        onClick={async () => {
+                                            setDraftSavingTaskId(task.id);
+                                            setError("");
+                                            const title = draftEditsByTaskId[task.id]?.draftTitle ?? task.draftTitle ?? "";
+                                            const summary = draftEditsByTaskId[task.id]?.draftSummary ?? task.draftSummary ?? "";
+                                            const content = draftEditsByTaskId[task.id]?.draftContent ?? task.draftContent ?? "";
+                                            try {
+                                                await patchTask(task.id, { draftTitle: title, draftSummary: summary, draftContent: content });
+                                                setDraftEditsByTaskId((prev) => {
+                                                    const next = { ...prev };
+                                                    delete next[task.id];
+                                                    return next;
+                                                });
+                                            } catch (err) {
+                                                setError(err instanceof Error ? err.message : "保存草稿失败");
+                                            } finally {
+                                                setDraftSavingTaskId(null);
+                                            }
+                                        }}
+                                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                    >
+                                        {draftSavingTaskId === task.id ? "保存中…" : "保存草稿修改"}
+                                    </button>
                                 </div>
                             )}
 
