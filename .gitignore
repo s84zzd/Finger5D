@@ -47,3 +47,9 @@ next-env.d.ts
 
 # runtime session store
 /src/data/admin-sessions.json
+
+# runtime workflow state
+/src/data/admin-workflow.json
+
+# published articles (generated content)
+/src/content/articles/*.mdx
