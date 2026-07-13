@@ -14,6 +14,7 @@ import {
     type FiveDCategory,
     type MonthlyThemePlan,
     type TaskOperationLog,
+    type TrendingTopic,
     WEEKLY_TASK_TARGET_MAX,
     WEEKLY_TASK_TARGET_MIN,
     WEEKLY_TASK_TARGET_STEP,
@@ -95,8 +96,8 @@ const CATEGORY_SEARCH_TERMS: Record<FiveDCategory, string[]> = {
 };
 
 const THEME_KEYWORD_MAP: Array<{ pattern: RegExp; token: string }> = [
-    { pattern: /衰老|老龄|老化|抗衰/g, token: "aging" },
-    { pattern: /衰老|老龄|老化|抗衰/g, token: "geroscience" },
+    { pattern: /衰老|老龄|老化|抗衰/, token: "aging" },
+    { pattern: /衰老|老龄|老化|抗衰/, token: "geroscience" },
     { pattern: /睡眠|睡不好|失眠/g, token: "sleep" },
     { pattern: /节律|昼夜/g, token: "circadian" },
     { pattern: /心|血压|心血管/g, token: "cardiovascular" },
@@ -169,7 +170,8 @@ function ensureDataFile(): void {
             weekSlotTemplates: [],
             weeklyReviews: [],
             paperLibrary: [],
-            tasks: []
+            tasks: [],
+            trendingTopics: []
         };
         fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), "utf8");
     }
@@ -355,7 +357,22 @@ export function readWorkflowState(): WorkflowState {
         weekSlotTemplates: normalizeWeekSlotTemplates(parsed.weekSlotTemplates),
         weeklyReviews: normalizeWeeklyReviews(parsed.weeklyReviews),
         paperLibrary: normalizePaperLibrary(parsed.paperLibrary),
-        tasks: normalizeTasks(parsed.tasks)
+        tasks: normalizeTasks(parsed.tasks),
+        trendingTopics: Array.isArray(parsed.trendingTopics)
+            ? parsed.trendingTopics.map((item) => ({
+                id: String(item.id ?? ""),
+                titleEn: String(item.titleEn ?? ""),
+                titleZh: String(item.titleZh ?? ""),
+                summary: String(item.summary ?? ""),
+                sourceUrl: String(item.sourceUrl ?? ""),
+                sourceDate: String(item.sourceDate ?? ""),
+                dimension: FIVE_D_CATEGORIES.includes(item.dimension as FiveDCategory) ? (item.dimension as FiveDCategory) : "cognitive",
+                suggestedStyle: (DRAFT_PROMPT_TEMPLATES as readonly string[]).includes(item.suggestedStyle) ? item.suggestedStyle as DraftPromptTemplate : "layered_progressive",
+                rationale: String(item.rationale ?? ""),
+                status: (["suggested", "saved", "task_created", "ignored"] as const).includes(item.status as TrendingTopic["status"]) ? item.status as TrendingTopic["status"] : "suggested",
+                createdAt: String(item.createdAt ?? "")
+            }))
+            : []
     };
 }
 
@@ -904,14 +921,50 @@ function parsePublicationYear(value: unknown): number | null {
     return null;
 }
 
-function buildRelevanceScore(candidate: PaperCandidate, terms: string[]): number {
-    const haystack = `${candidate.title} ${candidate.abstract ?? ""} ${candidate.journal}`.toLowerCase();
-    const score = terms.reduce((sum, term) => {
-        const normalized = term.toLowerCase();
-        return haystack.includes(normalized) ? sum + 1 : sum;
-    }, 0);
+const ENGLISH_STOPWORDS = new Set([
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
+    "by", "from", "as", "is", "was", "are", "were", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall",
+    "can", "need", "dare", "ought", "used", "this", "that", "these", "those", "i",
+    "me", "my", "we", "our", "you", "your", "he", "him", "his", "she", "her", "it",
+    "its", "they", "them", "their", "what", "which", "who", "whom", "where", "when",
+    "why", "how", "all", "each", "every", "both", "few", "more", "most", "other", "some",
+    "such", "no", "not", "only", "own", "same", "so", "than", "too", "very", "just",
+    "about", "above", "after", "again", "also", "am", "an", "any", "because", "before",
+    "below", "between", "both", "but", "by", "during", "each", "few", "for", "from",
+    "further", "get", "got", "here", "into", "itself", "let", "like", "make", "many",
+    "may", "me", "might", "much", "must", "myself", "now", "off", "once", "or", "our",
+    "ours", "out", "over", "own", "re", "s", "same", "shall", "she", "should", "since",
+    "so", "some", "still", "such", "t", "than", "that", "the", "their", "theirs", "them",
+    "themselves", "then", "there", "these", "they", "this", "those", "through", "under",
+    "until", "up", "us", "very", "was", "we", "were", "what", "when", "where", "which",
+    "while", "who", "whom", "why", "will", "with", "yet", "you", "your", "yours"
+]);
 
-    return score;
+function tokenizeForScoring(text: string): string[] {
+    return text.toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/).filter((t) => t.length > 1);
+}
+
+function fieldMatchScore(field: string | undefined, terms: string[], weight: number): number {
+    if (!field) return 0;
+    const tokens = new Set(tokenizeForScoring(field));
+    let hits = 0;
+    for (const term of terms) {
+        const lower = term.toLowerCase();
+        if (ENGLISH_STOPWORDS.has(lower)) continue;
+        if (lower.length <= 2 && !/[\u4e00-\u9fff]/.test(lower)) continue;
+        if (tokens.has(lower) || field.toLowerCase().includes(lower)) {
+            hits++;
+        }
+    }
+    return hits * weight;
+}
+
+function buildRelevanceScore(candidate: PaperCandidate, terms: string[]): number {
+    const titleScore = fieldMatchScore(candidate.title, terms, 3);
+    const abstractScore = fieldMatchScore(candidate.abstract, terms, 2);
+    const journalScore = fieldMatchScore(candidate.journal, terms, 1);
+    return titleScore + abstractScore + journalScore;
 }
 
 function rankCandidatesByRelevance(
@@ -939,6 +992,11 @@ function rankCandidatesByRelevance(
         .sort((left, right) => {
             if (right.score !== left.score) {
                 return right.score - left.score;
+            }
+            const leftCitations = left.candidate.citationCount ?? 0;
+            const rightCitations = right.candidate.citationCount ?? 0;
+            if (rightCitations !== leftCitations) {
+                return rightCitations - leftCitations;
             }
             return Number(right.candidate.year) - Number(left.candidate.year);
         })
@@ -1008,6 +1066,9 @@ async function searchCrossrefByTheme(
             const paperUrl = typeof item.URL === "string"
                 ? item.URL
                 : (doi ? `https://doi.org/${doi}` : "https://www.crossref.org/");
+            const citationCount = typeof item["is-referenced-by-count"] === "number"
+                ? item["is-referenced-by-count"] as number
+                : undefined;
 
             return {
                 id: `crossref-${doi ?? `idx-${index}`}`,
@@ -1020,7 +1081,8 @@ async function searchCrossrefByTheme(
                 year,
                 doi,
                 url: paperUrl,
-                abstract
+                abstract,
+                citationCount
             } satisfies PaperCandidate;
         });
 
@@ -1142,6 +1204,28 @@ async function searchOpenAlexByTheme(
     }
 }
 
+async function checkPubMedOAAvailability(pmids: string[]): Promise<Map<string, string>> {
+    if (pmids.length === 0) return new Map();
+    const map = new Map<string, string>();
+    try {
+        const idParam = pmids.join(",");
+        const res = await fetch(
+            `https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?ids=${encodeURIComponent(idParam)}&format=json`,
+            { cache: "no-store" }
+        );
+        if (!res.ok) return map;
+        const data = await res.json() as {
+            records?: Array<{ pmid?: string; pmcid?: string; status?: string }>;
+        };
+        for (const rec of data.records ?? []) {
+            if (rec.pmid && rec.pmcid && rec.status === "ok") {
+                map.set(rec.pmid, `https://www.ncbi.nlm.nih.gov/pmc/articles/${rec.pmcid}/`);
+            }
+        }
+    } catch { /* ignore */ }
+    return map;
+}
+
 function parsePubMedYear(pubDate: string): string {
     const match = String(pubDate ?? "").match(/\b(19|20)\d{2}\b/);
     return match ? match[0] : "Unknown";
@@ -1247,6 +1331,8 @@ async function searchPubMedByTheme(
         const resultMap = summaryPayload.result ?? {};
         const uids = Array.isArray(resultMap.uids) ? resultMap.uids : idList;
 
+        const oaMap = await checkPubMedOAAvailability(uids);
+
         const mapped = uids.flatMap((uid, index) => {
             const item = resultMap[uid] as Record<string, unknown> | undefined;
             if (!item) {
@@ -1264,6 +1350,7 @@ async function searchPubMedByTheme(
             const title = String(item.title ?? "Untitled paper").trim() || "Untitled paper";
             const pubdate = String(item.pubdate ?? item.sortpubdate ?? "");
             const year = parsePubMedYear(pubdate);
+            const fullTextUrl = oaMap.get(String(uid));
 
             return [{
                 id: `pubmed-${uid || `idx-${index}`}`,
@@ -1274,7 +1361,8 @@ async function searchPubMedByTheme(
                 year,
                 doi: undefined,
                 url: `https://pubmed.ncbi.nlm.nih.gov/${uid}/`,
-                abstract: abstractMap.get(String(uid)) ?? undefined
+                abstract: abstractMap.get(String(uid)) ?? undefined,
+                fullTextUrl
             } satisfies PaperCandidate];
         });
 
@@ -2127,6 +2215,48 @@ export function deletePaperLibraryItem(itemId: string): WorkflowState {
     return state;
 }
 
+export function updatePaperLibraryFullTextAvailable(
+    itemId: string,
+    fullTextAvailable: boolean
+): WorkflowState {
+    const state = readWorkflowState();
+    const index = state.paperLibrary.findIndex((item) => item.id === itemId);
+
+    if (index < 0) {
+        throw new Error("论文库条目不存在");
+    }
+
+    state.paperLibrary[index] = {
+        ...state.paperLibrary[index],
+        fullTextAvailable,
+        updatedAt: getIsoDate(new Date())
+    };
+
+    writeWorkflowState(state);
+    return state;
+}
+
+export function updatePaperLibraryAbstractAvailable(
+    itemId: string,
+    abstractAvailable: boolean
+): WorkflowState {
+    const state = readWorkflowState();
+    const index = state.paperLibrary.findIndex((item) => item.id === itemId);
+
+    if (index < 0) {
+        throw new Error("论文库条目不存在");
+    }
+
+    state.paperLibrary[index] = {
+        ...state.paperLibrary[index],
+        abstractAvailable,
+        updatedAt: getIsoDate(new Date())
+    };
+
+    writeWorkflowState(state);
+    return state;
+}
+
 /**
  * 从论文库取可入选当期的候选论文。按产品逻辑「论文入库即为全文已下载并保存」，
  * 仅返回已保存全文（originalFilePath）的条目，供执行模块选取。
@@ -2640,11 +2770,8 @@ async function extractTextFromOriginalFile(relativePath: string): Promise<string
             const buffer = fs.readFileSync(absolutePath);
             const { PDFParse } = await import("pdf-parse");
             const parser = new PDFParse({ data: buffer });
-            const parsed = await parser.getText();
-            const parsedText = typeof parsed === "string"
-                ? parsed
-                : String((parsed as { text?: string })?.text ?? "");
-            const text = parsedText.replace(/\s+/g, " ").trim();
+            const result = await parser.getText();
+            const text = (result?.text ?? "").replace(/\s+/g, " ").trim();
             await parser.destroy();
             return text || null;
         }

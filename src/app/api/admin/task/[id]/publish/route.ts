@@ -1,23 +1,12 @@
 import { NextResponse } from "next/server";
-import { ADMIN_AUTH_COOKIE, getAuthenticatedUsernameFromCookie } from "@/lib/admin-auth";
+import { getAuthenticatedUsernameFromCookieHeader } from "@/lib/admin-auth";
 import { appendTaskOperationLog, getTaskById, publishTaskToArticle, updateTask } from "@/lib/admin-workflow";
 
 export const runtime = "nodejs";
 
-function getCookieValue(cookieHeader: string, cookieName: string): string {
-    const parts = cookieHeader.split(";").map((item) => item.trim());
-    const pair = parts.find((item) => item.startsWith(`${cookieName}=`));
-    if (!pair) {
-        return "";
-    }
-    return pair.slice(cookieName.length + 1);
-}
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const authCookie = getCookieValue(cookieHeader, ADMIN_AUTH_COOKIE);
-    const actor = getAuthenticatedUsernameFromCookie(authCookie) ?? "未知用户";
+    const actor = getAuthenticatedUsernameFromCookieHeader(request.headers.get("cookie") ?? "") ?? "未知用户";
 
     try {
         const task = getTaskById(id);

@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const response = NextResponse.json({ ok: true, redirectTo });
     response.cookies.set({
         name: ADMIN_AUTH_COOKIE,
-        value: createAuthCookieValue(username, password),
+        value: createAuthCookieValue(username),
         httpOnly: true,
         sameSite: "strict",
         secure: process.env.NODE_ENV === "production",

@@ -1,19 +1,14 @@
-import { getArticleBySlug, getArticleSlugs } from "@/lib/mdx";
+import { getArticleBySlug } from "@/lib/mdx";
 import { MDXRenderer } from "@/components/MDXRenderer";
 import { Tag } from "@/components/Tag";
 import { ArrowLeft, Calendar, Clock } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 interface PageProps {
     params: Promise<{ slug: string }>;
-}
-
-export async function generateStaticParams() {
-    const slugs = getArticleSlugs();
-    return slugs.map((slug) => ({
-        slug: slug.replace(/\.mdx$/, ""),
-    }));
 }
 
 export async function generateMetadata({ params }: PageProps) {

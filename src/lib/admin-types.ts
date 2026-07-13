@@ -99,6 +99,9 @@ export interface PaperCandidate {
     abstract?: string;
     abstractEn?: string;
     abstractZh?: string;
+    citationCount?: number;
+    impactFactor?: number;
+    fullTextUrl?: string;
 }
 
 export interface PaperLibraryItem extends PaperCandidate {
@@ -123,6 +126,10 @@ export interface PaperLibraryItem extends PaperCandidate {
     localFilePath?: string;
     summaryFilePath?: string;
     originalFilePath?: string;
+    /** 标记该论文是否可以下载全文（部分外部来源如PubMed等只有摘要） */
+    fullTextAvailable?: boolean;
+    /** 标记该论文是否有摘要可用（部分论文确实没有摘要或无法获取） */
+    abstractAvailable?: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -167,6 +174,7 @@ export interface WorkflowState {
     weeklyReviews: WeeklyReview[];
     paperLibrary: PaperLibraryItem[];
     tasks: WorkflowTask[];
+    trendingTopics: TrendingTopic[];
 }
 
 export interface MonthlyGenerationPreviewWeek {
@@ -182,4 +190,34 @@ export interface MonthlyGenerationPreview {
     existingTotal: number;
     willAddTotal: number;
     weeks: MonthlyGenerationPreviewWeek[];
+}
+
+export interface ArticleSummary {
+    slug: string;
+    title: string;
+    date: string;
+    category: FiveDCategory | "frontier";
+    tags: string[];
+    summary: string;
+    readingTime: string;
+    wordCount: number;
+    filePath: string;
+}
+
+export interface ArticleDetail extends ArticleSummary {
+    content: string;
+}
+
+export interface TrendingTopic {
+    id: string;
+    titleEn: string;
+    titleZh: string;
+    summary: string;
+    sourceUrl: string;
+    sourceDate: string;
+    dimension: FiveDCategory;
+    suggestedStyle: DraftPromptTemplate;
+    rationale: string;
+    status: "suggested" | "saved" | "task_created" | "ignored";
+    createdAt: string;
 }

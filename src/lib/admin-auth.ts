@@ -1,3 +1,6 @@
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import type { NextRequest } from "next/server";
 
 export const ADMIN_AUTH_COOKIE = "finger5d_admin_auth";
@@ -5,6 +8,52 @@ export const ADMIN_AUTH_COOKIE = "finger5d_admin_auth";
 interface AdminUserCredential {
     username: string;
     password: string;
+}
+
+interface SessionEntry {
+    username: string;
+    expiresAt: number;
+}
+
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const SESSION_FILE = path.join(process.cwd(), "src", "data", "admin-sessions.json");
+
+function readSessionStore(): Map<string, SessionEntry> {
+    try {
+        if (!fs.existsSync(SESSION_FILE)) return new Map();
+        const raw = fs.readFileSync(SESSION_FILE, "utf8");
+        const parsed = JSON.parse(raw) as Record<string, SessionEntry>;
+        return new Map(Object.entries(parsed));
+    } catch {
+        return new Map();
+    }
+}
+
+function writeSessionStore(store: Map<string, SessionEntry>): void {
+    try {
+        const dir = path.dirname(SESSION_FILE);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        const obj: Record<string, SessionEntry> = {};
+        for (const [k, v] of store) {
+            obj[k] = v;
+        }
+        fs.writeFileSync(SESSION_FILE, JSON.stringify(obj, null, 2), "utf8");
+    } catch { /* ignore write errors */ }
+}
+
+function cleanupExpiredSessions(store: Map<string, SessionEntry>): Map<string, SessionEntry> {
+    const now = Date.now();
+    let changed = false;
+    for (const [token, entry] of store) {
+        if (entry.expiresAt <= now) {
+            store.delete(token);
+            changed = true;
+        }
+    }
+    if (changed) writeSessionStore(store);
+    return store;
 }
 
 function normalizeCredential(input: unknown): AdminUserCredential | null {
@@ -111,57 +160,38 @@ export function isValidAdminCredential(username: string, password: string): bool
     return isValidAdminToken(password);
 }
 
-export function createAuthCookieValue(username: string, password: string): string {
-    const users = getAdminUsers();
-    if (users.length > 0) {
-        return `${encodeURIComponent(username)}::${encodeURIComponent(password)}`;
-    }
-    return password;
+export function createAuthCookieValue(username: string): string {
+    const store = readSessionStore();
+    cleanupExpiredSessions(store);
+    const token = crypto.randomUUID();
+    store.set(token, {
+        username,
+        expiresAt: Date.now() + SESSION_TTL_MS
+    });
+    writeSessionStore(store);
+    return token;
 }
 
-function parseUserCookie(cookieValue: string): { username: string; password: string } | null {
-    const separator = "::";
-    const index = cookieValue.indexOf(separator);
-    if (index < 0) {
+function resolveUsernameFromToken(token: string): string | null {
+    const store = readSessionStore();
+    cleanupExpiredSessions(store);
+    const entry = store.get(token);
+    if (!entry) {
         return null;
     }
-
-    const encodedUsername = cookieValue.slice(0, index);
-    const encodedPassword = cookieValue.slice(index + separator.length);
-
-    try {
-        const username = decodeURIComponent(encodedUsername).trim();
-        const password = decodeURIComponent(encodedPassword);
-        if (!username || !password) {
-            return null;
-        }
-        return { username, password };
-    } catch {
+    if (entry.expiresAt <= Date.now()) {
+        store.delete(token);
+        writeSessionStore(store);
         return null;
     }
+    return entry.username;
 }
 
 export function getAuthenticatedUsernameFromCookie(cookieValue: string): string | null {
-    const users = getAdminUsers();
-
-    if (users.length > 0) {
-        const parsed = parseUserCookie(cookieValue);
-        if (!parsed) {
-            return null;
-        }
-
-        if (!isValidAdminCredential(parsed.username, parsed.password)) {
-            return null;
-        }
-
-        return parsed.username;
+    if (!cookieValue) {
+        return null;
     }
-
-    if (isValidAdminToken(cookieValue)) {
-        return "管理员";
-    }
-
-    return null;
+    return resolveUsernameFromToken(cookieValue);
 }
 
 export function getAuthenticatedUsernameFromCookieHeader(cookieHeader: string): string | null {

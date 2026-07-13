@@ -44,3 +44,6 @@ next-env.d.ts
 /src/data/paper-library/*-摘要.txt
 /src/data/paper-library/*-原文.txt
 /src/data/paper-library/*-原文.pdf
+
+# runtime session store
+/src/data/admin-sessions.json

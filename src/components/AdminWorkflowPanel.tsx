@@ -3,12 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
+import { ClientMDXRenderer } from "@/components/ClientMDXRenderer";
 import {
     DRAFT_PROMPT_TEMPLATES,
     DRAFT_STUDY_TEMPLATES,
+    FIVE_D_CATEGORIES,
     type DraftPromptTemplate,
     type DraftStudyTemplate,
     type MonthlyGenerationPreview,
+    type ArticleSummary,
+    type ArticleDetail,
+    type TrendingTopic,
     WEEKLY_ARTICLE_TARGET,
     WEEKS_PER_MONTH,
     WEEKLY_TASK_TARGET_MAX,
@@ -97,15 +102,19 @@ const DRAFT_STUDY_TEMPLATE_LABEL: Record<DraftStudyTemplate, string> = {
     diagnostic_accuracy: "诊断试验准确性研究"
 };
 
-type AdminModuleKey = "home" | "planning" | "execution" | "library" | "settings";
+type AdminModuleKey = "home" | "articles" | "trending" | "planning" | "execution" | "library" | "settings";
 type ExecutionStatusFilter = "all" | "in_progress" | WorkflowTask["status"];
 type LibraryAdoptionFilter = "all" | "used" | "future";
+type LibraryFullTextFilter = "all" | "available" | "unavailable";
+type LibraryAbstractFilter = "all" | "available" | "unavailable";
 type LibrarySearchCategory = FiveDCategory | "other";
 type LibraryStorageFilter = "all" | "uncategorized" | string;
 type LibraryReviewCycleFilter = "all" | "this_week" | "this_month" | "last_7_days" | "last_30_days";
 
 const ADMIN_MODULE_OPTIONS: Array<{ key: AdminModuleKey; label: string; desc: string }> = [
     { key: "home", label: "后台主页", desc: "查看入口与关键进度" },
+    { key: "articles", label: "文章库", desc: "已发布文章管理与编辑" },
+    { key: "trending", label: "热点选题", desc: "AI 网络搜索衰老最新研究趋势" },
     { key: "planning", label: "规划模块", desc: "月历规划、周白板与分工" },
     { key: "execution", label: "执行模块", desc: "任务检索、草稿、审核与发布" },
     { key: "library", label: "论文库模块", desc: "论文入库、下载与批量导出" },
@@ -185,6 +194,8 @@ export function AdminWorkflowPanel({
     const [librarySaving, setLibrarySaving] = useState(false);
     const [libraryDownloadingId, setLibraryDownloadingId] = useState<string | null>(null);
     const [libraryAdoptingId, setLibraryAdoptingId] = useState<string | null>(null);
+    const [libraryUpdatingFullTextId, setLibraryUpdatingFullTextId] = useState<string | null>(null);
+    const [libraryUpdatingAbstractId, setLibraryUpdatingAbstractId] = useState<string | null>(null);
     const [libraryCoreSummaryLoadingId, setLibraryCoreSummaryLoadingId] = useState<string | null>(null);
     const [libraryCoreSummaryContentById, setLibraryCoreSummaryContentById] = useState<Record<string, string>>({});
     const [libraryCoreSummaryOpenId, setLibraryCoreSummaryOpenId] = useState<string | null>(null);
@@ -196,6 +207,8 @@ export function AdminWorkflowPanel({
     const [libraryListPageSize, setLibraryListPageSize] = useState<number>(20);
     const [libraryListPage, setLibraryListPage] = useState<number>(1);
     const [libraryAdoptionFilter, setLibraryAdoptionFilter] = useState<LibraryAdoptionFilter>("all");
+    const [libraryFullTextFilter, setLibraryFullTextFilter] = useState<LibraryFullTextFilter>("all");
+    const [libraryAbstractFilter, setLibraryAbstractFilter] = useState<LibraryAbstractFilter>("all");
     const [libraryReviewCycleFilter, setLibraryReviewCycleFilter] = useState<LibraryReviewCycleFilter>("all");
     const [libraryCustomQuery, setLibraryCustomQuery] = useState("");
     const [libraryStorageFilter, setLibraryStorageFilter] = useState<LibraryStorageFilter>("all");
@@ -214,10 +227,40 @@ export function AdminWorkflowPanel({
     const [draftSavingTaskId, setDraftSavingTaskId] = useState<string | null>(null);
     const [activeAdminModule, setActiveAdminModule] = useState<AdminModuleKey>("home");
     const [error, setError] = useState<string>("");
+    const [success, setSuccess] = useState<string | null>(null);
 
-    const currentMonthKey = useMemo(() => {
+    const [articles, setArticles] = useState<ArticleSummary[]>([]);
+    const [articlesLoading, setArticlesLoading] = useState(false);
+    const [articlesFilterCategory, setArticlesFilterCategory] = useState<string>("all");
+    const [articlesSearchText, setArticlesSearchText] = useState("");
+    const [articleDetail, setArticleDetail] = useState<ArticleDetail | null>(null);
+    const [articleDetailLoading, setArticleDetailLoading] = useState(false);
+    const [articleEditing, setArticleEditing] = useState(false);
+    const [articleEditContent, setArticleEditContent] = useState("");
+    const [articleEditData, setArticleEditData] = useState<{ title?: string; summary?: string; category?: string; tags?: string[] }>({});
+    const [articleSaving, setArticleSaving] = useState(false);
+    const [articleDeleting, setArticleDeleting] = useState<string | null>(null);
+    const [articlePreviewMode, setArticlePreviewMode] = useState<"source" | "preview">("source");
+
+    const [trendingTopic, setTrendingTopic] = useState("");
+    const [trendingTimeRange, setTrendingTimeRange] = useState<"week" | "month" | "quarter" | "year">("month");
+    const [trendingSourceType, setTrendingSourceType] = useState<"all" | "academic" | "news" | "review">("all");
+    const [trendingDimensions, setTrendingDimensions] = useState<FiveDCategory[]>(["cognitive", "cardio", "physical", "nutrition", "social"]);
+    const [trendingSearching, setTrendingSearching] = useState(false);
+    const [trendingResults, setTrendingResults] = useState<TrendingTopic[]>([]);
+    const [trendingSearchRawCount, setTrendingSearchRawCount] = useState(0);
+    const [trendingTopics, setTrendingTopics] = useState<TrendingTopic[]>([]);
+    const [trendingTopicsLoading, setTrendingTopicsLoading] = useState(false);
+    const [trendingFilter, setTrendingFilter] = useState<"all" | "suggested" | "saved" | "task_created" | "ignored">("all");
+    const [trendingCreatingTask, setTrendingCreatingTask] = useState<string | null>(null);
+
+    const [currentMonthKey, setCurrentMonthKey] = useState<string>("");
+    const [clientNow, setClientNow] = useState<Date | null>(null);
+
+    useEffect(() => {
+        setClientNow(new Date());
         const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        setCurrentMonthKey(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
     }, []);
 
     const currentWeekKey = useMemo(() => {
@@ -228,11 +271,11 @@ export function AdminWorkflowPanel({
     }, [state?.lastSyncedWeekKey]);
 
     const currentMonthlyPlan = useMemo(() => {
-        if (!state) {
+        if (!state || !currentMonthKey) { // Add currentMonthKey as dependency
             return null;
         }
         return state.monthlyPlans.find((plan) => plan.monthKey === currentMonthKey) ?? state.monthlyPlans[0] ?? null;
-    }, [state, currentMonthKey]);
+    }, [state, currentMonthKey]); // Add currentMonthKey as dependency
 
     const currentWeeklyReview = useMemo(() => {
         if (!state) {
@@ -382,7 +425,12 @@ export function AdminWorkflowPanel({
 
     const filteredLibraryItems = useMemo(() => {
         const normalizedCustomQuery = libraryCustomQuery.trim().toLowerCase();
-        const now = new Date();
+        
+        if (!clientNow) { // Only run filtering once clientNow is set
+            return [];
+        }
+
+        const now = clientNow; // Use clientNow here
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         const getCycleStartDate = () => {
@@ -464,10 +512,28 @@ export function AdminWorkflowPanel({
                 return !String(item.storageCategory ?? "").trim();
             }
             return String(item.storageCategory ?? "").trim() === libraryStorageFilter;
+        }).filter((item) => {
+            if (libraryFullTextFilter === "all") {
+                return true;
+            }
+            if (libraryFullTextFilter === "available") {
+                return item.fullTextAvailable !== false;
+            }
+            return item.fullTextAvailable === false;
+        }).filter((item) => {
+            if (libraryAbstractFilter === "all") {
+                return true;
+            }
+            const hasAbstract = String(item.abstractZh ?? item.abstractEn ?? item.abstract ?? "").trim().length > 0;
+            if (libraryAbstractFilter === "available") {
+                return hasAbstract || item.abstractAvailable !== false;
+            }
+            // unavailable: 明确标记为无摘要，或实际无摘要且未标记为有摘要
+            return item.abstractAvailable === false || (!hasAbstract && item.abstractAvailable !== true);
         });
 
         return filtered;
-    }, [state?.paperLibrary, completedAdoptedPaperIds, libraryAdoptionFilter, libraryKeywordFilter, libraryCustomQuery, libraryReviewCycleFilter, libraryStorageFilter]);
+    }, [state?.paperLibrary, completedAdoptedPaperIds, libraryAdoptionFilter, libraryFullTextFilter, libraryAbstractFilter, libraryKeywordFilter, libraryCustomQuery, libraryReviewCycleFilter, libraryStorageFilter]);
 
     const visibleLibraryItems = useMemo(() => {
         return filteredLibraryItems;
@@ -486,7 +552,7 @@ export function AdminWorkflowPanel({
 
     useEffect(() => {
         setLibraryListPage(1);
-    }, [libraryAdoptionFilter, libraryKeywordFilter, libraryCustomQuery, libraryStorageFilter, libraryListPageSize]);
+    }, [libraryAdoptionFilter, libraryFullTextFilter, libraryAbstractFilter, libraryKeywordFilter, libraryCustomQuery, libraryStorageFilter, libraryListPageSize]);
 
     useEffect(() => {
         setLibraryListPage((prev) => Math.min(Math.max(1, prev), libraryTotalPages));
@@ -1030,12 +1096,84 @@ export function AdminWorkflowPanel({
         }
     }
 
+    async function toggleLibraryItemFullTextAvailable(itemId: string, currentValue?: boolean) {
+        // 确认对话框
+        const isMarkingAvailable = currentValue === false;
+        const confirmMessage = isMarkingAvailable
+            ? "确认将该论文标记为「可下载全文」吗？\n\n请确保已通过来源页面验证了全文可下载。"
+            : "确认将该论文标记为「不可下载全文」吗？\n\n标记后该论文将出现在「仅摘要可用」筛选列表中。";
+        
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        setLibraryUpdatingFullTextId(itemId);
+        try {
+            setError("");
+            const response = await fetch(`/api/admin/paper-library/${itemId}/full-text-available`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fullTextAvailable: !currentValue })
+            });
+
+            if (!response.ok) {
+                const payload = await response.json() as { message?: string };
+                throw new Error(payload.message ?? "更新标记失败");
+            }
+
+            const nextState = await response.json() as WorkflowState;
+            setState(nextState);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "更新标记失败");
+        } finally {
+            setLibraryUpdatingFullTextId(null);
+        }
+    }
+
+    async function toggleLibraryItemAbstractAvailable(itemId: string, currentValue?: boolean) {
+        // 确认对话框
+        const isMarkingAvailable = currentValue === false;
+        const confirmMessage = isMarkingAvailable
+            ? "确认将该论文标记为「有摘要可用」吗？\n\n请确保已通过下载或查看来源验证了摘要确实存在。"
+            : "确认将该论文标记为「无摘要可用」吗？\n\n标记后该论文将出现在「摘要缺失」筛选列表中，跳过后续下载尝试。";
+        
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        setLibraryUpdatingAbstractId(itemId);
+        try {
+            setError("");
+            const response = await fetch(`/api/admin/paper-library/${itemId}/abstract-available`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ abstractAvailable: !currentValue })
+            });
+
+            if (!response.ok) {
+                const payload = await response.json() as { message?: string };
+                throw new Error(payload.message ?? "更新标记失败");
+            }
+
+            const nextState = await response.json() as WorkflowState;
+            setState(nextState);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "更新标记失败");
+        } finally {
+            setLibraryUpdatingAbstractId(null);
+        }
+    }
+
     async function adoptLibraryItemToCurrentPeriod(itemId: string) {
         setLibraryAdoptingId(itemId);
         try {
             setError("");
             const response = await fetch(`/api/admin/paper-library/${itemId}/adopt-to-current-period`, { method: "POST" });
             const payload = await response.json() as WorkflowState & { adopted?: boolean; message?: string; taskId?: string };
+            if (!response.ok) {
+                setError(payload.message ?? "入选当期失败");
+                return;
+            }
             setState(payload);
             if (payload.adopted === false && payload.message) {
                 setError(payload.message);
@@ -1501,6 +1639,200 @@ export function AdminWorkflowPanel({
         }
     }
 
+    async function fetchArticles() {
+        setArticlesLoading(true);
+        try {
+            const response = await fetch("/api/admin/articles");
+            if (!response.ok) throw new Error("获取文章列表失败");
+            const data = await response.json() as { articles: ArticleSummary[] };
+            setArticles(data.articles);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "获取文章列表失败");
+        } finally {
+            setArticlesLoading(false);
+        }
+    }
+
+    async function openArticleDetail(slug: string) {
+        setArticleDetailLoading(true);
+        setArticleEditing(false);
+        setArticlePreviewMode("source");
+        try {
+            const response = await fetch(`/api/admin/articles/${slug}`);
+            if (!response.ok) throw new Error("获取文章详情失败");
+            const article = await response.json() as ArticleDetail;
+            setArticleDetail(article);
+            setArticleEditContent(article.content);
+            setArticleEditData({
+                title: article.title,
+                summary: article.summary,
+                category: article.category,
+                tags: [...article.tags]
+            });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "获取文章详情失败");
+        } finally {
+            setArticleDetailLoading(false);
+        }
+    }
+
+    async function saveArticle() {
+        if (!articleDetail) return;
+        setArticleSaving(true);
+        try {
+            const response = await fetch(`/api/admin/articles/${articleDetail.slug}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ...articleEditData,
+                    content: articleEditContent
+                })
+            });
+            if (!response.ok) throw new Error("保存文章失败");
+            setArticleEditing(false);
+            await fetchArticles();
+            await openArticleDetail(articleDetail.slug);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "保存文章失败");
+        } finally {
+            setArticleSaving(false);
+        }
+    }
+
+    async function deleteArticle(slug: string) {
+        setArticleDeleting(slug);
+        try {
+            const response = await fetch(`/api/admin/articles/${slug}`, { method: "DELETE" });
+            if (!response.ok) throw new Error("删除文章失败");
+            setArticleDetail(null);
+            await fetchArticles();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "删除文章失败");
+        } finally {
+            setArticleDeleting(null);
+        }
+    }
+
+    const filteredArticles = useMemo(() => {
+        return articles.filter((a) => {
+            if (articlesFilterCategory !== "all" && a.category !== articlesFilterCategory) return false;
+            if (articlesSearchText) {
+                const q = articlesSearchText.toLowerCase();
+                const match = a.title.toLowerCase().includes(q) ||
+                    a.summary.toLowerCase().includes(q) ||
+                    a.tags.some((t) => t.toLowerCase().includes(q));
+                if (!match) return false;
+            }
+            return true;
+        });
+    }, [articles, articlesFilterCategory, articlesSearchText]);
+
+    async function searchTrending() {
+        if (!trendingTopic.trim()) {
+            setError("请输入搜索主题");
+            return;
+        }
+        setTrendingSearching(true);
+        setError("");
+        try {
+            const response = await fetch("/api/admin/trending/search", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    topic: trendingTopic,
+                    timeRange: trendingTimeRange,
+                    sourceType: trendingSourceType,
+                    dimensions: trendingDimensions
+                })
+            });
+            if (!response.ok) {
+                const payload = await response.json() as { message?: string };
+                throw new Error(payload.message ?? "选题搜索失败");
+            }
+            const payload = await response.json() as { topics: TrendingTopic[]; rawResultCount: number };
+            setTrendingResults(payload.topics);
+            setTrendingSearchRawCount(payload.rawResultCount);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "选题搜索失败");
+        } finally {
+            setTrendingSearching(false);
+        }
+    }
+
+    async function fetchTrendingTopics() {
+        setTrendingTopicsLoading(true);
+        try {
+            const response = await fetch("/api/admin/trending/topics");
+            if (!response.ok) throw new Error("获取选题库失败");
+            const payload = await response.json() as { topics: TrendingTopic[] };
+            setTrendingTopics(payload.topics);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "获取选题库失败");
+        } finally {
+            setTrendingTopicsLoading(false);
+        }
+    }
+
+    async function saveTrendingTopicToLibrary(topic: TrendingTopic) {
+        try {
+            const response = await fetch("/api/admin/trending/topics", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ topic })
+            });
+            if (!response.ok) throw new Error("收藏失败");
+            const payload = await response.json() as { topics: TrendingTopic[] };
+            setTrendingTopics(payload.topics);
+            setTrendingResults((prev) => prev.map((t) => t.id === topic.id ? { ...t, status: "saved" as const } : t));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "收藏失败");
+        }
+    }
+
+    async function ignoreTrendingTopicById(topicId: string) {
+        try {
+            const response = await fetch(`/api/admin/trending/topics/${topicId}`, { method: "DELETE" });
+            if (!response.ok) throw new Error("操作失败");
+            const payload = await response.json() as { topics: TrendingTopic[] };
+            setTrendingTopics(payload.topics);
+            setTrendingResults((prev) => prev.map((t) => t.id === topicId ? { ...t, status: "ignored" as const } : t));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "操作失败");
+        }
+    }
+
+    async function createTaskFromTrendingTopic(topicId: string) {
+        setTrendingCreatingTask(topicId);
+        try {
+            const response = await fetch(`/api/admin/trending/topics/${topicId}/create-task`, { method: "POST" });
+            if (!response.ok) {
+                const payload = await response.json() as { message?: string };
+                throw new Error(payload.message ?? "创建任务失败");
+            }
+            const payload = await response.json() as { topics: TrendingTopic[]; taskId: string; importedCount: number };
+            setTrendingTopics(payload.topics);
+            setTrendingResults((prev) => prev.map((t) => t.id === topicId ? { ...t, status: "task_created" as const } : t));
+            setError("");
+            setActiveAdminModule("execution");
+            if (payload.importedCount > 0) {
+                setSuccess(`已自动导入 ${payload.importedCount} 篇论文到论文库并关联到任务`);
+                setTimeout(() => setSuccess(null), 5000);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "创建任务失败");
+        } finally {
+            setTrendingCreatingTask(null);
+        }
+    }
+
+    const filteredTrendingTopics = useMemo(() => {
+        const all = [...trendingResults, ...trendingTopics.filter((t) => !trendingResults.some((r) => r.id === t.id))];
+        return all.filter((t) => {
+            if (trendingFilter !== "all" && t.status !== trendingFilter) return false;
+            return true;
+        });
+    }, [trendingResults, trendingTopics, trendingFilter]);
+
     async function logout() {
         try {
             await fetch("/api/admin/auth/logout", { method: "POST" });
@@ -1664,6 +1996,12 @@ export function AdminWorkflowPanel({
                 </div>
             )}
 
+            {success && (
+                <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">
+                    {success}
+                </div>
+            )}
+
             {(activeAdminModule === "home" || activeAdminModule === "planning") && monthlyGenerationPreview && (
                 <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-900">
                     <h2 className="text-sm font-semibold">预生成预览（{monthlyGenerationPreview.monthKey}）</h2>
@@ -1683,7 +2021,7 @@ export function AdminWorkflowPanel({
                             type="button"
                             onClick={generateMonthlyPlanTasks}
                             disabled={monthlyGenerating || monthlyGenerationPreview.willAddTotal === 0}
-                            className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
+                            className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-600"
                         >
                             {monthlyGenerating ? "执行中..." : "确认预生成"}
                         </button>
@@ -2071,14 +2409,14 @@ export function AdminWorkflowPanel({
                                     }}
                                     disabled={settingsSaving || !state}
                                 />
-                                Crossref
+                                CrossRef
                             </label>
                             <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
                                 <input
                                     type="checkbox"
                                     checked={Boolean(state?.searchSettings.sourceWhitelist.includes("openalex"))}
                                     onChange={(event) => {
-                                        const current = state?.searchSettings.sourceWhitelist ?? ["crossref"];
+                                        const current = state?.searchSettings.sourceWhitelist ?? ["openalex"];
                                         const next = event.target.checked
                                             ? Array.from(new Set([...current, "openalex"]))
                                             : current.filter((source) => source !== "openalex");
@@ -2232,6 +2570,480 @@ export function AdminWorkflowPanel({
                     </label>
                 </div>
 
+                </div>
+            )}
+
+            {activeAdminModule === "articles" && (
+                <div className="mb-6 space-y-6">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-900">文章库管理</h2>
+                                <p className="mt-1 text-sm text-slate-600">管理已发布的文章：查看、编辑、删除。所有修改直接写入 MDX 文件。</p>
+                            </div>
+                            <button
+                                onClick={() => void fetchArticles()}
+                                disabled={articlesLoading}
+                                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 transition-colors disabled:opacity-60"
+                            >
+                                {articlesLoading ? "加载中..." : "刷新列表"}
+                            </button>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <input
+                                type="text"
+                                value={articlesSearchText}
+                                onChange={(e) => setArticlesSearchText(e.target.value)}
+                                placeholder="搜索标题、摘要、标签..."
+                                className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 w-64"
+                            />
+                            <div className="flex flex-wrap gap-1.5">
+                                {(["all", "cardio", "physical", "cognitive", "nutrition", "social", "frontier"] as const).map((cat) => (
+                                    <button
+                                        key={cat}
+                                        type="button"
+                                        onClick={() => setArticlesFilterCategory(cat)}
+                                        className={`rounded-full px-3 py-1 text-xs font-medium ${articlesFilterCategory === cat ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                                    >
+                                        {cat === "all" ? "全部" : cat === "frontier" ? "前沿" : CATEGORY_LABEL[cat as FiveDCategory] ?? cat}
+                                    </button>
+                                ))}
+                            </div>
+                            <span className="text-xs text-slate-500">{filteredArticles.length} 篇文章</span>
+                        </div>
+                    </div>
+
+                    {articles.length === 0 && !articlesLoading && (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center">
+                            <p className="text-sm text-slate-500">暂无文章。点击"刷新列表"加载。</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        {filteredArticles.map((article) => (
+                            <div
+                                key={article.slug}
+                                className={`rounded-2xl border bg-white p-5 transition-colors ${articleDetail?.slug === article.slug ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300"}`}
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                            <span>{article.date}</span>
+                                            <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-600">{article.category}</span>
+                                            <span>{article.wordCount} 字</span>
+                                            {article.readingTime && <span>{article.readingTime}</span>}
+                                        </div>
+                                        <h3 className="mt-1 text-sm font-semibold text-slate-900 line-clamp-2">{article.title}</h3>
+                                        <p className="mt-1 text-xs text-slate-600 line-clamp-2">{article.summary}</p>
+                                        {article.tags.length > 0 && (
+                                            <div className="mt-2 flex flex-wrap gap-1">
+                                                {article.tags.slice(0, 4).map((tag) => (
+                                                    <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">{tag}</span>
+                                                ))}
+                                                {article.tags.length > 4 && <span className="text-[10px] text-slate-400">+{article.tags.length - 4}</span>}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex shrink-0 gap-1">
+                                        <button
+                                            onClick={() => void openArticleDetail(article.slug)}
+                                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                        >
+                                            查看
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                void openArticleDetail(article.slug).then(() => setArticleEditing(true));
+                                            }}
+                                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
+                                        >
+                                            编辑
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (confirm(`确定删除文章「${article.title}」？此操作不可撤销。`)) {
+                                                    void deleteArticle(article.slug);
+                                                }
+                                            }}
+                                            disabled={articleDeleting === article.slug}
+                                            className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                                        >
+                                            {articleDeleting === article.slug ? "..." : "删除"}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {articleDetail && (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-900">{articleEditing ? "编辑文章" : "文章详情"}</h2>
+                                    <p className="mt-1 text-xs text-slate-500">{articleDetail.filePath}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {articleEditing ? (
+                                        <>
+                                            <button
+                                                onClick={() => setArticleEditing(false)}
+                                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                            >
+                                                取消
+                                            </button>
+                                            <button
+                                                onClick={() => void saveArticle()}
+                                                disabled={articleSaving}
+                                                className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                                            >
+                                                {articleSaving ? "保存中..." : "保存修改"}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => setArticleEditing(true)}
+                                                className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
+                                            >
+                                                编辑模式
+                                            </button>
+                                            <button
+                                                onClick={() => setArticleDetail(null)}
+                                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                            >
+                                                关闭
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {articleEditing ? (
+                                <div className="mt-4 space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-700 mb-1">标题</label>
+                                            <input
+                                                type="text"
+                                                value={articleEditData.title ?? ""}
+                                                onChange={(e) => setArticleEditData((prev) => ({ ...prev, title: e.target.value }))}
+                                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-700 mb-1">分类</label>
+                                            <select
+                                                value={articleEditData.category ?? "frontier"}
+                                                onChange={(e) => setArticleEditData((prev) => ({ ...prev, category: e.target.value }))}
+                                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                                            >
+                                                <option value="frontier">前沿</option>
+                                                {FIVE_D_CATEGORIES.map((cat) => (
+                                                    <option key={cat} value={cat}>{CATEGORY_LABEL[cat]}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-700 mb-1">摘要</label>
+                                        <input
+                                            type="text"
+                                            value={articleEditData.summary ?? ""}
+                                            onChange={(e) => setArticleEditData((prev) => ({ ...prev, summary: e.target.value }))}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-700 mb-1">标签（逗号分隔）</label>
+                                        <input
+                                            type="text"
+                                            value={(articleEditData.tags ?? []).join(", ")}
+                                            onChange={(e) => setArticleEditData((prev) => ({ ...prev, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) }))}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="mb-1 flex items-center justify-between">
+                                            <label className="text-xs font-medium text-slate-700">MDX 正文</label>
+                                            <div className="flex gap-1">
+                                                <button
+                                                    onClick={() => setArticlePreviewMode("source")}
+                                                    className={`rounded px-2 py-0.5 text-[10px] font-medium ${articlePreviewMode === "source" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-100"}`}
+                                                >
+                                                    源码
+                                                </button>
+                                                <button
+                                                    onClick={() => setArticlePreviewMode("preview")}
+                                                    className={`rounded px-2 py-0.5 text-[10px] font-medium ${articlePreviewMode === "preview" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-100"}`}
+                                                >
+                                                    预览
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {articlePreviewMode === "source" ? (
+                                            <textarea
+                                                value={articleEditContent}
+                                                onChange={(e) => setArticleEditContent(e.target.value)}
+                                                rows={30}
+                                                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs text-slate-900 outline-none focus:border-blue-500"
+                                            />
+                                        ) : (
+                                            <div className="max-h-[600px] overflow-auto rounded-lg border border-slate-200 bg-white p-6">
+                                                <ClientMDXRenderer source={articleEditContent} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="mt-4 space-y-4">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div><span className="font-medium text-slate-700">标题：</span>{articleDetail.title}</div>
+                                        <div><span className="font-medium text-slate-700">分类：</span>{articleDetail.category}</div>
+                                        <div><span className="font-medium text-slate-700">日期：</span>{articleDetail.date}</div>
+                                        <div><span className="font-medium text-slate-700">字数：</span>{articleDetail.wordCount}</div>
+                                    </div>
+                                    <div className="text-sm"><span className="font-medium text-slate-700">摘要：</span>{articleDetail.summary}</div>
+                                    {articleDetail.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {articleDetail.tags.map((tag) => (
+                                                <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">{tag}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="border-t border-slate-200 pt-4">
+                                        <div className="mb-2 flex items-center gap-2">
+                                            <button
+                                                onClick={() => setArticlePreviewMode("source")}
+                                                className={`rounded px-2 py-0.5 text-xs font-medium ${articlePreviewMode === "source" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-100"}`}
+                                            >
+                                                源码
+                                            </button>
+                                            <button
+                                                onClick={() => setArticlePreviewMode("preview")}
+                                                className={`rounded px-2 py-0.5 text-xs font-medium ${articlePreviewMode === "preview" ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-100"}`}
+                                            >
+                                                预览
+                                            </button>
+                                        </div>
+                                        {articlePreviewMode === "source" ? (
+                                            <pre className="max-h-[500px] overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-4 font-mono text-xs text-slate-800">
+                                                {articleDetail.content}
+                                            </pre>
+                                        ) : (
+                                            <div className="max-h-[600px] overflow-auto rounded-lg border border-slate-200 bg-white p-6">
+                                                <ClientMDXRenderer source={articleDetail.content} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeAdminModule === "trending" && (
+                <div className="mb-6 space-y-6">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                        <h2 className="text-lg font-bold text-slate-900">AI 热点选题助手</h2>
+                        <p className="mt-1 text-sm text-slate-600">通过 Tavily 网络搜索发现衰老/抗衰老领域最新研究趋势，AI 自动生成选题建议。</p>
+
+                        <div className="mt-4 space-y-3">
+                            <div className="flex gap-3">
+                                <input
+                                    type="text"
+                                    value={trendingTopic}
+                                    onChange={(e) => setTrendingTopic(e.target.value)}
+                                    placeholder="输入主题关键词，如：睡眠与衰老、肌肉衰减、地中海饮食"
+                                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                                    onKeyDown={(e) => { if (e.key === "Enter") void searchTrending(); }}
+                                />
+                                <button
+                                    onClick={() => void searchTrending()}
+                                    disabled={trendingSearching || !trendingTopic.trim()}
+                                    className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 transition-colors disabled:opacity-60"
+                                >
+                                    {trendingSearching ? "搜索中..." : "AI 选题"}
+                                </button>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3 text-sm">
+                                <span className="text-slate-600">时间范围：</span>
+                                {(["week", "month", "quarter", "year"] as const).map((r) => (
+                                    <button
+                                        key={r}
+                                        onClick={() => setTrendingTimeRange(r)}
+                                        className={`rounded-full px-3 py-1 text-xs font-medium ${trendingTimeRange === r ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                                    >
+                                        {{ week: "近1周", month: "近1月", quarter: "近3月", year: "近1年" }[r]}
+                                    </button>
+                                ))}
+                                <span className="ml-2 text-slate-600">来源：</span>
+                                {(["all", "academic", "news", "review"] as const).map((s) => (
+                                    <button
+                                        key={s}
+                                        onClick={() => setTrendingSourceType(s)}
+                                        className={`rounded-full px-3 py-1 text-xs font-medium ${trendingSourceType === s ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                                    >
+                                        {{ all: "全部", academic: "学术论文", news: "新闻报道", review: "综述文章" }[s]}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                                <span className="text-slate-600">关联维度：</span>
+                                {FIVE_D_CATEGORIES.map((cat) => (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setTrendingDimensions((prev) => prev.includes(cat) ? prev.filter((d) => d !== cat) : [...prev, cat])}
+                                        className={`rounded-full px-3 py-1 text-xs font-medium ${trendingDimensions.includes(cat) ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                                    >
+                                        {CATEGORY_LABEL[cat]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {trendingSearchRawCount > 0 && (
+                            <p className="mt-3 text-xs text-slate-500">搜索到 {trendingSearchRawCount} 条网络结果，AI 分析后推荐 {trendingResults.length} 个选题</p>
+                        )}
+                    </div>
+
+                    {trendingResults.length > 0 && (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                            <h3 className="text-sm font-bold text-slate-900">AI 推荐选题</h3>
+                            <div className="mt-3 space-y-3">
+                                {trendingResults.map((topic) => (
+                                    <div key={topic.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-600">{topic.dimension}</span>
+                                                    <span className="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-600">{topic.suggestedStyle}</span>
+                                                    {topic.sourceDate && <span className="text-slate-500">{topic.sourceDate}</span>}
+                                                </div>
+                                                <h4 className="mt-1 text-sm font-semibold text-slate-900">{topic.titleZh}</h4>
+                                                {topic.titleEn && <p className="text-xs text-slate-500">{topic.titleEn}</p>}
+                                                <p className="mt-1 text-xs text-slate-700">{topic.summary}</p>
+                                                <p className="mt-1 text-xs text-slate-500 italic">{topic.rationale}</p>
+                                                {topic.sourceUrl && (
+                                                    <a href={topic.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs text-blue-600 hover:underline">
+                                                        查看原文 →
+                                                    </a>
+                                                )}
+                                            </div>
+                                            <div className="flex shrink-0 gap-1">
+                                                {topic.status === "suggested" ? (
+                                                    <>
+                                                        <button
+                                                            onClick={() => void saveTrendingTopicToLibrary(topic)}
+                                                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                                                        >
+                                                            收藏
+                                                        </button>
+                                                        <button
+                                                            onClick={() => void ignoreTrendingTopicById(topic.id)}
+                                                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                                        >
+                                                            忽略
+                                                        </button>
+                                                    </>
+                                                ) : topic.status === "saved" ? (
+                                                    <button
+                                                        onClick={() => void createTaskFromTrendingTopic(topic.id)}
+                                                        disabled={trendingCreatingTask === topic.id}
+                                                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+                                                    >
+                                                        {trendingCreatingTask === topic.id ? "..." : "创建任务"}
+                                                    </button>
+                                                ) : topic.status === "task_created" ? (
+                                                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">已创建任务</span>
+                                                ) : (
+                                                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">已忽略</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-slate-900">选题库</h3>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => void fetchTrendingTopics()}
+                                    disabled={trendingTopicsLoading}
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                >
+                                    {trendingTopicsLoading ? "加载中..." : "刷新"}
+                                </button>
+                                <div className="flex gap-1">
+                                    {(["all", "saved", "task_created", "ignored"] as const).map((f) => (
+                                        <button
+                                            key={f}
+                                            onClick={() => setTrendingFilter(f)}
+                                            className={`rounded-full px-3 py-1 text-xs font-medium ${trendingFilter === f ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                                        >
+                                            {{ all: "全部", saved: "已收藏", task_created: "已创建任务", ignored: "已忽略" }[f]}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {filteredTrendingTopics.length === 0 ? (
+                            <p className="mt-3 text-xs text-slate-500">暂无选题。使用上方搜索功能发现最新研究趋势。</p>
+                        ) : (
+                            <div className="mt-3 space-y-2">
+                                {filteredTrendingTopics.map((topic) => (
+                                    <div key={topic.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-600">{topic.dimension}</span>
+                                                <span className={`rounded-full px-2 py-0.5 font-medium ${topic.status === "saved" ? "bg-emerald-50 text-emerald-700" : topic.status === "task_created" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-500"}`}>
+                                                    {{ saved: "已收藏", task_created: "已创建任务", ignored: "已忽略", suggested: "待处理" }[topic.status]}
+                                                </span>
+                                            </div>
+                                            <p className="mt-0.5 text-sm font-medium text-slate-900 truncate">{topic.titleZh}</p>
+                                            <p className="text-xs text-slate-500 truncate">{topic.summary}</p>
+                                        </div>
+                                        <div className="ml-3 flex shrink-0 gap-1">
+                                            {topic.status === "saved" && (
+                                                <button
+                                                    onClick={() => void createTaskFromTrendingTopic(topic.id)}
+                                                    disabled={trendingCreatingTask === topic.id}
+                                                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+                                                >
+                                                    {trendingCreatingTask === topic.id ? "..." : "创建任务"}
+                                                </button>
+                                            )}
+                                            {topic.status === "suggested" && (
+                                                <>
+                                                    <button
+                                                        onClick={() => void saveTrendingTopicToLibrary(topic)}
+                                                        className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
+                                                    >
+                                                        收藏
+                                                    </button>
+                                                    <button
+                                                        onClick={() => void ignoreTrendingTopicById(topic.id)}
+                                                        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                                    >
+                                                        忽略
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -2493,6 +3305,56 @@ export function AdminWorkflowPanel({
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-600">全文可用性：</span>
+                    <button
+                        type="button"
+                        onClick={() => setLibraryFullTextFilter("all")}
+                        className={`rounded px-2 py-1 font-semibold ${libraryFullTextFilter === "all" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                    >
+                        全部
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setLibraryFullTextFilter("available")}
+                        className={`rounded px-2 py-1 font-semibold ${libraryFullTextFilter === "available" ? "bg-emerald-600 text-white" : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                    >
+                        ✅ 可下载全文
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setLibraryFullTextFilter("unavailable")}
+                        className={`rounded px-2 py-1 font-semibold ${libraryFullTextFilter === "unavailable" ? "bg-rose-600 text-white" : "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"}`}
+                    >
+                        ❌ 仅摘要可用
+                    </button>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-600">摘要可用性：</span>
+                    <button
+                        type="button"
+                        onClick={() => setLibraryAbstractFilter("all")}
+                        className={`rounded px-2 py-1 font-semibold ${libraryAbstractFilter === "all" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                    >
+                        全部
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setLibraryAbstractFilter("available")}
+                        className={`rounded px-2 py-1 font-semibold ${libraryAbstractFilter === "available" ? "bg-emerald-600 text-white" : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                    >
+                        ✅ 有摘要
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setLibraryAbstractFilter("unavailable")}
+                        className={`rounded px-2 py-1 font-semibold ${libraryAbstractFilter === "unavailable" ? "bg-rose-600 text-white" : "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"}`}
+                    >
+                        ❌ 摘要缺失
+                    </button>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-slate-600">复核周期：</span>
                     <select
                         aria-label="论文库复核周期筛选"
@@ -2653,6 +3515,21 @@ export function AdminWorkflowPanel({
                                 )}
                                 <p className="mt-1 text-xs text-slate-600">
                                     {item.searchScope === "other" ? "其他（关键词优先）" : CATEGORY_LABEL[item.category]} · {item.source} · {item.year}
+                                    {typeof item.citationCount === "number" && item.citationCount > 0 && (
+                                        <span className="ml-2 inline-flex items-center rounded-full bg-blue-50 px-1.5 py-0.5 font-medium text-blue-700">
+                                            引用 {item.citationCount}
+                                        </span>
+                                    )}
+                                    {item.fullTextUrl && (
+                                        <a
+                                            href={item.fullTextUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="ml-2 inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                                        >
+                                            OA 全文
+                                        </a>
+                                    )}
                                 </p>
                                 <p className="mt-1 text-xs text-slate-600">
                                     摘要速览：{(item.abstractZh ?? item.abstractEn ?? item.abstract ?? "暂无摘要").slice(0, 160)}
@@ -2798,8 +3675,19 @@ export function AdminWorkflowPanel({
                                     </span>
                                     <button
                                         type="button"
+                                        onClick={() => void toggleLibraryItemAbstractAvailable(item.id, item.abstractAvailable)}
+                                        disabled={libraryBatchExporting || libraryUpdatingAbstractId === item.id}
+                                        className={`rounded border px-2 py-1 font-semibold disabled:opacity-60 ${item.abstractAvailable === false ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100" : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                                        title={item.abstractAvailable === false ? "点击标记为有摘要可用" : "点击标记为无摘要可用（确认来源确实不提供摘要）"}
+                                    >
+                                        {libraryUpdatingAbstractId === item.id
+                                            ? "更新中..."
+                                            : (item.abstractAvailable === false ? "❌ 确认无摘要" : "✅ 确认有摘要")}
+                                    </button>
+                                    <button
+                                        type="button"
                                         onClick={() => void downloadLibraryPaper(item.id, "summary")}
-                                        disabled={libraryBatchExporting || libraryDownloadingId === `${item.id}:summary`}
+                                        disabled={libraryBatchExporting || libraryDownloadingId === `${item.id}:summary` || item.abstractAvailable === false}
                                         className="rounded bg-slate-900 px-2 py-1 font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
                                     >
                                         {libraryDownloadingId === `${item.id}:summary`
@@ -2815,6 +3703,17 @@ export function AdminWorkflowPanel({
                                         {libraryDownloadingId === `${item.id}:original`
                                             ? "下载中..."
                                             : (String(item.abstractZh ?? item.abstractEn ?? item.abstract ?? "").trim() ? "下载全文（入库存放）" : "无摘要也可尝试下载全文（入库存放）")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void toggleLibraryItemFullTextAvailable(item.id, item.fullTextAvailable)}
+                                        disabled={libraryBatchExporting || libraryUpdatingFullTextId === item.id}
+                                        className={`rounded border px-2 py-1 font-semibold disabled:opacity-60 ${item.fullTextAvailable === false ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100" : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                                        title={item.fullTextAvailable === false ? "点击标记为可下载全文" : "点击标记为不可下载全文（仅摘要可用）"}
+                                    >
+                                        {libraryUpdatingFullTextId === item.id
+                                            ? "更新中..."
+                                            : (item.fullTextAvailable === false ? "❌ 不可下载全文" : "✅ 可下载全文")}
                                     </button>
                                     {item.originalFilePath && !isCompleted && (
                                         <button
@@ -3079,6 +3978,28 @@ export function AdminWorkflowPanel({
                                         <p className="mt-1 text-xs text-slate-500">
                                             原文标题：{selectedPaper.title}
                                         </p>
+                                    )}
+                                    {selectedPaper && (
+                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                                            {typeof selectedPaper.citationCount === "number" && selectedPaper.citationCount > 0 && (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
+                                                    引用 {selectedPaper.citationCount}
+                                                </span>
+                                            )}
+                                            {selectedPaper.fullTextUrl && (
+                                                <a
+                                                    href={selectedPaper.fullTextUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                                                >
+                                                    OA 全文
+                                                </a>
+                                            )}
+                                            {selectedPaper.doi && (
+                                                <span className="text-slate-400">DOI: {selectedPaper.doi}</span>
+                                            )}
+                                        </div>
                                     )}
                                     {selectedPaper && (
                                         <div className="mt-2 flex flex-wrap items-center gap-2">
